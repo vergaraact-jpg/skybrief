@@ -7,6 +7,15 @@ let datosMeteorologicos = null;
 let coordsActuales = { ...DEFAULT_COORDS };
 let mapa = null;
 
+// Lista de modelos oficiales de Gemini ordenados por velocidad y compatibilidad universal
+const CANDIDATE_MODELS = [
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-8b",
+  "gemini-1.5-pro",
+  "gemini-pro"
+];
+
 // Elementos DOM
 const cityTitle = document.getElementById("city-title");
 const tempDisplay = document.getElementById("temp-display");
@@ -25,11 +34,11 @@ const btnWalk = document.getElementById("btn-transport-walk");
 const btnCar = document.getElementById("btn-transport-car");
 const btnRefresh = document.getElementById("btn-refresh-icon");
 
-// Cargar clave guardada al iniciar
+// Cargar clave previa al iniciar
 if (localStorage.getItem("gemini_key")) {
   apiKeyInput.value = localStorage.getItem("gemini_key");
-  const modeloGuardado = localStorage.getItem("gemini_working_model") || "Auto-detectado";
-  keyStatus.textContent = `● Modo Pro Activo (${modeloGuardado})`;
+  const modeloGuardado = localStorage.getItem("gemini_active_model") || "Modo Pro IA";
+  keyStatus.textContent = `● ${modeloGuardado} Conectado`;
   keyStatus.style.color = "#38bdf8";
 }
 
@@ -57,13 +66,13 @@ btnSaveKey.addEventListener("click", () => {
   const clave = apiKeyInput.value.trim();
   if (clave) {
     localStorage.setItem("gemini_key", clave);
-    localStorage.removeItem("gemini_working_model");
-    keyStatus.textContent = "Clave guardada. Conectando con Gemini...";
+    localStorage.removeItem("gemini_active_model");
+    keyStatus.textContent = "Clave guardada. Buscando modelo compatible...";
     keyStatus.style.color = "#38bdf8";
     procesarReporteCompleto();
   } else {
     localStorage.removeItem("gemini_key");
-    localStorage.removeItem("gemini_working_model");
+    localStorage.removeItem("gemini_active_model");
     keyStatus.textContent = "Clave eliminada. Modo Básico activo.";
     keyStatus.style.color = "#94a3b8";
     procesarReporteCompleto();
@@ -101,9 +110,7 @@ async function obtenerUbicacion() {
 }
 
 async function obtenerClimaYCalidad(lat, lon) {
-  // Clima estándar
   const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max&current_weather=true&timezone=auto`;
-  // Calidad del aire (PM2.5)
   const airUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5`;
 
   const [resClima, resAire] = await Promise.all([
@@ -127,7 +134,6 @@ function inicializarMapa(lat, lon) {
     mapa.setView([lat, lon], 12);
   }
 
-  // Marcador de ubicación
   L.marker([lat, lon]).addTo(mapa);
 }
 
@@ -168,17 +174,15 @@ function motorNativo(clima, transporte) {
   return { temp: `${temp}°C`, consejo, items, paleta };
 }
 
-// Extractor de JSON a prueba de formatos
+// Extractor de JSON universal y seguro
 function extractJsonFromText(rawText) {
   if (!rawText) throw new Error("Respuesta vacía de la IA.");
   const trimmed = rawText.trim();
 
-  // Intento 1: Directo
   try {
     return JSON.parse(trimmed);
   } catch (e) {}
 
-  // Intento 2: Bloque markdown ```json ... ```
   const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   if (codeBlockMatch && codeBlockMatch[1]) {
     try {
@@ -186,7 +190,6 @@ function extractJsonFromText(rawText) {
     } catch (e) {}
   }
 
-  // Intento 3: Buscar delimitadores { ... }
   const firstBrace = trimmed.indexOf('{');
   const lastBrace = trimmed.lastIndexOf('}');
   if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
@@ -196,58 +199,25 @@ function extractJsonFromText(rawText) {
     } catch (e) {}
   }
 
-  throw new Error("No se pudo interpretar el formato JSON de la respuesta de IA.");
+  throw new Error("No se pudo interpretar el formato JSON de Gemini.");
 }
 
-// Obtiene la lista oficial de modelos habilitados para tu API Key y elige el mejor
-async function getBestWorkingModel(apiKey) {
-  const cachedModel = localStorage.getItem("gemini_working_model");
-  if (cachedModel) return cachedModel;
-
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
-    const res = await fetch(url);
-    
-    if (res.ok) {
-      const data = await res.json();
-      if (data.models && data.models.length > 0) {
-        const supportedModels = data.models
-          .filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent"))
-          .map(m => m.name.replace(/^models\//, ""));
-
-        const preferred = supportedModels.find(m => m.includes("2.5-flash") || m.includes("2.0-flash") || m.includes("1.5-flash") || m.includes("flash")) || supportedModels[0];
-
-        if (preferred) {
-          localStorage.setItem("gemini_working_model", preferred);
-          return preferred;
-        }
-      }
-    }
-  } catch (err) {
-    console.warn("Fallo al listar modelos desde endpoint:", err);
-  }
-
-  return "gemini-2.5-flash";
-}
-
-// Ejecuta la llamada garantizando que el modelo existe
-async function callGemini(apiKey, promptText) {
+// BÚSQUEDA SECUENCIAL AUTO-DESCARTABLE (Infalible)
+async function callGeminiAutoDetect(apiKey, promptText) {
   const cleanKey = apiKey.trim();
-  const detected = await getBestWorkingModel(cleanKey);
-  const modelsToTry = [
-    detected,
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-latest"
-  ];
-  const uniqueModels = [...new Set(modelsToTry)];
+
+  // Si ya hay un modelo guardado que funcionó antes, pruébalo primero
+  const cached = localStorage.getItem("gemini_active_model");
+  const queue = cached 
+    ? [cached, ...CANDIDATE_MODELS.filter(m => m !== cached)]
+    : CANDIDATE_MODELS;
 
   let lastError = null;
 
-  for (const model of uniqueModels) {
+  for (const model of queue) {
     try {
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
+      
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -256,54 +226,70 @@ async function callGemini(apiKey, promptText) {
         })
       });
 
+      // Si el modelo no existe o no está habilitado (404 o 400 not found), DESCÁRTALO y sigue
       if (response.status === 404) {
-        console.warn(`Modelo ${model} no disponible (404), probando siguiente...`);
-        localStorage.removeItem("gemini_working_model");
+        console.warn(`[Auto-Detect] Modelo ${model} no disponible (404), descartando...`);
+        localStorage.removeItem("gemini_active_model");
         continue;
       }
 
       const result = await response.json().catch(() => ({}));
+
+      // Si hay error en la respuesta de Google
       if (!response.ok) {
+        const errorMsg = (result.error?.message || "").toLowerCase();
+        // Si el error es que el modelo no existe, descartar y seguir con el siguiente
+        if (errorMsg.includes("not found") || errorMsg.includes("not supported") || errorMsg.includes("404")) {
+          console.warn(`[Auto-Detect] Modelo ${model} no admitido (${errorMsg}), descartando...`);
+          localStorage.removeItem("gemini_active_model");
+          continue;
+        }
+        // Si la clave es inválida (400/403 de autenticación), corta para avisar al usuario
+        if (errorMsg.includes("api_key_invalid") || errorMsg.includes("api key not valid") || response.status === 403) {
+          throw new Error("API Key inválida. Comprueba tu clave de Google AI Studio.");
+        }
         throw new Error(result.error?.message || `Error HTTP ${response.status}`);
       }
 
       if (!result.candidates || !result.candidates[0]?.content?.parts?.[0]?.text) {
-        throw new Error("Respuesta vacía o filtrada por seguridad.");
+        continue;
       }
 
-      localStorage.setItem("gemini_working_model", model);
+      // ¡ÉXITO! Encontramos el modelo que sí funciona en tu cuenta
+      localStorage.setItem("gemini_active_model", model);
+      console.log(`[Auto-Detect] ✓ Modelo activo fijado con éxito: ${model}`);
       return { text: result.candidates[0].content.parts[0].text, model };
 
     } catch (err) {
       lastError = err;
       const msg = (err.message || "").toLowerCase();
-      if (msg.includes("404") || msg.includes("not found")) {
-        continue;
+      if (msg.includes("inválida") || msg.includes("api key not valid")) {
+        throw err;
       }
-      throw err;
+      // Cualquier otro error de modelo, pasa al siguiente candidato
     }
   }
 
-  throw new Error(`No se pudo conectar con Gemini: ${lastError?.message || "Error desconocido"}`);
+  throw new Error(`Ningún modelo de Gemini respondió. ${lastError?.message || "Revisa tu conexión o API Key."}`);
 }
 
 async function motorGemini(clima, transporte, city, apiKey) {
   const prompt = `Analiza estos datos meteorológicos de ${city}:
-- Temp: ${clima.current_weather.temperature}°C (Máx: ${clima.daily.temperature_2m_max[0]}°C, Mín: ${clima.daily.temperature_2m_min[0]}°C)
+- Temp actual: ${clima.current_weather.temperature}°C (Máx: ${clima.daily.temperature_2m_max[0]}°C, Mín: ${clima.daily.temperature_2m_min[0]}°C)
 - Prob. lluvia: ${clima.daily.precipitation_probability_max[0]}%
 - UV: ${clima.daily.uv_index_max[0]}
 - Viento: ${clima.current_weather.windspeed} km/h
 - Modo de transporte elegido por el usuario: ${transporte}
 
-Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura (sin formato Markdown adicional):
+Responde exclusivamente con un JSON válido con este formato:
 {
   "temp": "${Math.round(clima.current_weather.temperature)}°C",
-  "consejo": "Consejo directo de estilismo y trayecto en ${transporte} (máx 15 palabras)",
-  "items": ["Item 1", "Item 2", "Item 3"],
+  "consejo": "Consejo directo de ropa y trayecto en ${transporte} (máx 15 palabras)",
+  "items": ["Prenda 1", "Accesorio 2", "Accesorio 3"],
   "paleta": ["#HEX1", "#HEX2", "#HEX3"]
 }`;
 
-  const { text: raw, model } = await callGemini(apiKey, prompt);
+  const { text: raw, model } = await callGeminiAutoDetect(apiKey, prompt);
   const cleanJson = extractJsonFromText(raw);
   
   return {
@@ -343,19 +329,19 @@ async function procesarReporteCompleto() {
 
   if (apiKey) {
     try {
-      keyStatus.textContent = "● Consultando con Gemini...";
+      keyStatus.textContent = "● Probando modelos de Gemini...";
       keyStatus.style.color = "#38bdf8";
 
       resultado = await motorGemini(clima, modoTransporte, coordsActuales.city, apiKey);
-      const mod = resultado.modeloUsado || "Gemini";
-      keyStatus.textContent = `● Modo Pro Activo: Analizado con ${mod}`;
+      const mod = resultado.modeloUsado || "Gemini Flash";
+      keyStatus.textContent = `● Modo Pro Activo (${mod})`;
       keyStatus.style.color = "#38bdf8";
     } catch (e) {
       console.warn("Fallo en Gemini, aplicando motor nativo:", e);
       resultado = motorNativo(clima, modoTransporte);
-      keyStatus.textContent = `Error IA: ${e.message}. Mostrando motor básico.`;
+      keyStatus.textContent = `Aviso: ${e.message}`;
       keyStatus.style.color = "#f59e0b";
-      alert(`Aviso de Modo Pro: ${e.message}`);
+      alert(`Aviso de IA: ${e.message}`);
     }
   } else {
     resultado = motorNativo(clima, modoTransporte);
@@ -410,31 +396,24 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
   const LocalNotifications = window.Capacitor?.Plugins?.LocalNotifications;
 
   if (LocalNotifications) {
-    // 1. Pedir permisos nativos al usuario en Android
     const permiso = await LocalNotifications.requestPermissions();
     if (permiso.display !== "granted") {
       alert("Necesitamos permisos de notificación para el aviso matutino.");
       return;
     }
 
-    // 2. Extraer horas y minutos (ej. "07:30")
     const [horas, minutos] = horaString.split(":").map(Number);
-
-    // 3. Calcular la próxima fecha de disparo
     const fechaDisparo = new Date();
     fechaDisparo.setHours(horas, minutos, 0, 0);
 
-    // Si la hora ya pasó hoy, programar para mañana
     if (fechaDisparo <= new Date()) {
       fechaDisparo.setDate(fechaDisparo.getDate() + 1);
     }
 
-    // 4. Cancelar avisos anteriores para no duplicar
     try {
       await LocalNotifications.cancel({ notifications: [{ id: 101 }] });
     } catch (e) {}
 
-    // 5. Registrar la notificación en el reloj nativo del sistema
     await LocalNotifications.schedule({
       notifications: [
         {
@@ -445,7 +424,7 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
             at: fechaDisparo,
             repeats: true,
             every: "day",
-            allowWhileIdle: true // Despierta el móvil aunque esté en modo reposo profundo (Doze Mode)
+            allowWhileIdle: true
           },
           sound: "beep.wav",
           smallIcon: "ic_stat_name"
