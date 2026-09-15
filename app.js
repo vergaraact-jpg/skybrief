@@ -7,14 +7,6 @@ let datosMeteorologicos = null;
 let coordsActuales = { ...DEFAULT_COORDS };
 let mapa = null;
 
-// Modelos a probar en orden de prioridad
-const FALLBACK_MODELS = [
-  "gemini-2.5-flash",
-  "gemini-2.0-flash",
-  "gemini-1.5-flash",
-  "gemini-1.5-flash-latest"
-];
-
 // Elementos DOM
 const cityTitle = document.getElementById("city-title");
 const tempDisplay = document.getElementById("temp-display");
@@ -36,7 +28,7 @@ const btnRefresh = document.getElementById("btn-refresh-icon");
 // Cargar clave guardada al iniciar
 if (localStorage.getItem("gemini_key")) {
   apiKeyInput.value = localStorage.getItem("gemini_key");
-  const modeloGuardado = localStorage.getItem("gemini_selected_model") || "Gemini Flash";
+  const modeloGuardado = localStorage.getItem("gemini_working_model") || "Auto-detectado";
   keyStatus.textContent = `● Modo Pro Activo (${modeloGuardado})`;
   keyStatus.style.color = "#38bdf8";
 }
@@ -65,12 +57,13 @@ btnSaveKey.addEventListener("click", () => {
   const clave = apiKeyInput.value.trim();
   if (clave) {
     localStorage.setItem("gemini_key", clave);
-    keyStatus.textContent = "Clave guardada. Consultando con Gemini...";
+    localStorage.removeItem("gemini_working_model");
+    keyStatus.textContent = "Clave guardada. Detectando modelos de Gemini...";
     keyStatus.style.color = "#38bdf8";
     procesarReporteCompleto();
   } else {
     localStorage.removeItem("gemini_key");
-    localStorage.removeItem("gemini_selected_model");
+    localStorage.removeItem("gemini_working_model");
     keyStatus.textContent = "Clave eliminada. Modo Básico activo.";
     keyStatus.style.color = "#94a3b8";
     procesarReporteCompleto();
@@ -175,53 +168,71 @@ function motorNativo(clima, transporte) {
   return { temp: `${temp}°C`, consejo, items, paleta };
 }
 
-// Llamada protegida a Gemini con fallback automático entre modelos
-async function callGemini(apiKey, promptText) {
-  let lastError = null;
+// Obtiene la lista oficial de modelos habilitados para tu API Key y elige el mejor
+async function getBestWorkingModel(apiKey) {
+  // Si ya detectamos uno funcional en esta sesión/dispositivo, úsalo primero
+  const cachedModel = localStorage.getItem("gemini_working_model");
+  if (cachedModel) return cachedModel;
 
-  for (const model of FALLBACK_MODELS) {
-    try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: promptText }] }]
-        })
-      });
-
-      // Si da 404, prueba con el siguiente modelo del bucle
-      if (response.status === 404) {
-        console.warn(`Modelo ${model} no disponible (404), probando siguiente...`);
-        continue;
-      }
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error?.message || `Error HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (!data.candidates || !data.candidates[0]?.content?.parts?.[0]?.text) {
-        throw new Error("Respuesta de Gemini vacía.");
-      }
-
-      // Guardar el modelo que funcionó para futuras consultas
-      localStorage.setItem("gemini_selected_model", model);
-      return { text: data.candidates[0].content.parts[0].text, model };
-
-    } catch (err) {
-      lastError = err;
-      const errMsg = (err.message || "").toLowerCase();
-      if (errMsg.includes("404") || errMsg.includes("not found")) {
-        continue;
-      }
-      throw err;
-    }
+  const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+  const res = await fetch(url);
+  
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error?.message || `Error al validar API Key (HTTP ${res.status})`);
   }
 
-  throw new Error(`Ningún modelo compatible respondió. Último error: ${lastError?.message || "Modelo no encontrado"}`);
+  const data = await res.json();
+  if (!data.models || data.models.length === 0) {
+    throw new Error("No hay modelos disponibles para esta clave.");
+  }
+
+  // Filtrar solo los modelos que sirven para generar texto/contenido
+  const supportedModels = data.models
+    .filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent"))
+    .map(m => m.name.replace(/^models\//, "")); // Limpia el prefijo "models/" si viene incluido
+
+  // Priorizar modelos flash rápidos (2.5, 2.0, 1.5) y si no, tomar el primero que exista
+  const preferred = supportedModels.find(m => m.includes("flash")) || supportedModels[0];
+
+  if (!preferred) {
+    throw new Error("No se encontró ningún modelo compatible con generateContent.");
+  }
+
+  localStorage.setItem("gemini_working_model", preferred);
+  return preferred;
+}
+
+// Ejecuta la llamada garantizando que el modelo existe
+async function callGemini(apiKey, promptText) {
+  const cleanKey = apiKey.trim();
+  const model = await getBestWorkingModel(cleanKey);
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: promptText }] }]
+    })
+  });
+
+  // Si por alguna razón el modelo guardado falla con 404, se borra la caché para auto-recuperar
+  if (response.status === 404) {
+    localStorage.removeItem("gemini_working_model");
+    throw new Error(`El modelo ${model} no está disponible. Vuelve a pulsar para auto-detectar.`);
+  }
+
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error?.message || `Error HTTP ${response.status}`);
+  }
+
+  if (!result.candidates || !result.candidates[0]?.content?.parts?.[0]?.text) {
+    throw new Error("Respuesta de Gemini vacía o filtrada.");
+  }
+
+  return { text: result.candidates[0].content.parts[0].text, model };
 }
 
 async function motorGemini(clima, transporte, city, apiKey) {
@@ -281,7 +292,7 @@ async function procesarReporteCompleto() {
   if (apiKey) {
     try {
       resultado = await motorGemini(clima, modoTransporte, coordsActuales.city, apiKey);
-      const mod = resultado.modeloUsado || "Gemini Flash";
+      const mod = resultado.modeloUsado || "Gemini";
       keyStatus.textContent = `● Modo Pro Activo: Analizado con ${mod}`;
       keyStatus.style.color = "#38bdf8";
     } catch (e) {
