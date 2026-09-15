@@ -7,12 +7,22 @@ let datosMeteorologicos = null;
 let coordsActuales = { ...DEFAULT_COORDS };
 let mapa = null;
 
-// Lista de modelos oficiales de Gemini ordenados por velocidad y compatibilidad universal
-const CANDIDATE_MODELS = [
+// Lista ampliada de modelos oficiales y experimentales de Gemini
+const EXPANDED_KNOWN_MODELS = [
   "gemini-2.0-flash",
+  "gemini-2.0-flash-lite-preview-02-05",
+  "gemini-2.0-flash-lite",
+  "gemini-2.0-flash-thinking-exp-01-21",
+  "gemini-2.0-flash-thinking-exp",
+  "gemini-2.0-pro-exp-02-05",
+  "gemini-2.0-flash-exp",
   "gemini-1.5-flash",
+  "gemini-1.5-flash-latest",
   "gemini-1.5-flash-8b",
+  "gemini-1.5-flash-8b-latest",
   "gemini-1.5-pro",
+  "gemini-1.5-pro-latest",
+  "gemini-1.0-pro",
   "gemini-pro"
 ];
 
@@ -67,7 +77,7 @@ btnSaveKey.addEventListener("click", () => {
   if (clave) {
     localStorage.setItem("gemini_key", clave);
     localStorage.removeItem("gemini_active_model");
-    keyStatus.textContent = "Clave guardada. Buscando modelo compatible...";
+    keyStatus.textContent = "Clave guardada. Detectando modelos activos...";
     keyStatus.style.color = "#38bdf8";
     procesarReporteCompleto();
   } else {
@@ -202,15 +212,54 @@ function extractJsonFromText(rawText) {
   throw new Error("No se pudo interpretar el formato JSON de Gemini.");
 }
 
-// BÚSQUEDA SECUENCIAL AUTO-DESCARTABLE (Infalible)
+// Descubre dinámicamente todos los modelos activos para la clave del usuario
+async function discoverAvailableModels(apiKey) {
+  let apiModels = [];
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.models && Array.isArray(data.models)) {
+        apiModels = data.models
+          .filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent"))
+          .map(m => m.name.replace(/^models\//, ""));
+      }
+    }
+  } catch (e) {
+    console.warn("No se pudo consultar el catálogo /models:", e);
+  }
+
+  // Lista combinada (los devueltos por la API de Google + lista conocida de respaldo)
+  const fullList = [...new Set([...apiModels, ...EXPANDED_KNOWN_MODELS])];
+
+  // Ordenar inteligentemente: flash > thinking > pro > otros
+  fullList.sort((a, b) => {
+    const score = (name) => {
+      let s = 0;
+      if (name.includes("flash")) s += 10;
+      if (name.includes("2.0") || name.includes("2.5") || name.includes("3.")) s += 5;
+      if (name.includes("1.5")) s += 3;
+      return s;
+    };
+    return score(b) - score(a);
+  });
+
+  return fullList;
+}
+
+// BÚSQUEDA SECUENCIAL AUTO-DESCARTABLE UNIVERSAL
 async function callGeminiAutoDetect(apiKey, promptText) {
   const cleanKey = apiKey.trim();
 
-  // Si ya hay un modelo guardado que funcionó antes, pruébalo primero
+  // Si ya hay un modelo guardado funcional, ponlo el primero
   const cached = localStorage.getItem("gemini_active_model");
+  
+  // Obtener catálogo completo de modelos para esta clave
+  const availableModels = await discoverAvailableModels(cleanKey);
+  
   const queue = cached 
-    ? [cached, ...CANDIDATE_MODELS.filter(m => m !== cached)]
-    : CANDIDATE_MODELS;
+    ? [cached, ...availableModels.filter(m => m !== cached)]
+    : availableModels;
 
   let lastError = null;
 
@@ -226,9 +275,9 @@ async function callGeminiAutoDetect(apiKey, promptText) {
         })
       });
 
-      // Si el modelo no existe o no está habilitado (404 o 400 not found), DESCÁRTALO y sigue
+      // Si el modelo no está disponible (404), descártalo y prueba el siguiente inmediatamente
       if (response.status === 404) {
-        console.warn(`[Auto-Detect] Modelo ${model} no disponible (404), descartando...`);
+        console.warn(`[Auto-Detect] Modelo '${model}' 404, probando siguiente...`);
         localStorage.removeItem("gemini_active_model");
         continue;
       }
@@ -238,15 +287,13 @@ async function callGeminiAutoDetect(apiKey, promptText) {
       // Si hay error en la respuesta de Google
       if (!response.ok) {
         const errorMsg = (result.error?.message || "").toLowerCase();
-        // Si el error es que el modelo no existe, descartar y seguir con el siguiente
         if (errorMsg.includes("not found") || errorMsg.includes("not supported") || errorMsg.includes("404")) {
-          console.warn(`[Auto-Detect] Modelo ${model} no admitido (${errorMsg}), descartando...`);
+          console.warn(`[Auto-Detect] Modelo '${model}' no admitido (${errorMsg}), saltando...`);
           localStorage.removeItem("gemini_active_model");
           continue;
         }
-        // Si la clave es inválida (400/403 de autenticación), corta para avisar al usuario
         if (errorMsg.includes("api_key_invalid") || errorMsg.includes("api key not valid") || response.status === 403) {
-          throw new Error("API Key inválida. Comprueba tu clave de Google AI Studio.");
+          throw new Error("API Key inválida. Revisa tu clave en Google AI Studio.");
         }
         throw new Error(result.error?.message || `Error HTTP ${response.status}`);
       }
@@ -266,11 +313,10 @@ async function callGeminiAutoDetect(apiKey, promptText) {
       if (msg.includes("inválida") || msg.includes("api key not valid")) {
         throw err;
       }
-      // Cualquier otro error de modelo, pasa al siguiente candidato
     }
   }
 
-  throw new Error(`Ningún modelo de Gemini respondió. ${lastError?.message || "Revisa tu conexión o API Key."}`);
+  throw new Error(`Ningún modelo respondió. ${lastError?.message || "Comprueba tu clave o conexión."}`);
 }
 
 async function motorGemini(clima, transporte, city, apiKey) {
@@ -329,11 +375,11 @@ async function procesarReporteCompleto() {
 
   if (apiKey) {
     try {
-      keyStatus.textContent = "● Probando modelos de Gemini...";
+      keyStatus.textContent = "● Detectando modelos activos en tu cuenta...";
       keyStatus.style.color = "#38bdf8";
 
       resultado = await motorGemini(clima, modoTransporte, coordsActuales.city, apiKey);
-      const mod = resultado.modeloUsado || "Gemini Flash";
+      const mod = resultado.modeloUsado || "Gemini";
       keyStatus.textContent = `● Modo Pro Activo (${mod})`;
       keyStatus.style.color = "#38bdf8";
     } catch (e) {
