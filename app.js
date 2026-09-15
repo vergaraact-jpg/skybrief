@@ -58,7 +58,7 @@ btnSaveKey.addEventListener("click", () => {
   if (clave) {
     localStorage.setItem("gemini_key", clave);
     localStorage.removeItem("gemini_working_model");
-    keyStatus.textContent = "Clave guardada. Detectando modelos de Gemini...";
+    keyStatus.textContent = "Clave guardada. Conectando con Gemini...";
     keyStatus.style.color = "#38bdf8";
     procesarReporteCompleto();
   } else {
@@ -168,71 +168,123 @@ function motorNativo(clima, transporte) {
   return { temp: `${temp}°C`, consejo, items, paleta };
 }
 
+// Extractor de JSON a prueba de formatos
+function extractJsonFromText(rawText) {
+  if (!rawText) throw new Error("Respuesta vacía de la IA.");
+  const trimmed = rawText.trim();
+
+  // Intento 1: Directo
+  try {
+    return JSON.parse(trimmed);
+  } catch (e) {}
+
+  // Intento 2: Bloque markdown ```json ... ```
+  const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (codeBlockMatch && codeBlockMatch[1]) {
+    try {
+      return JSON.parse(codeBlockMatch[1].trim());
+    } catch (e) {}
+  }
+
+  // Intento 3: Buscar delimitadores { ... }
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    const jsonCandidate = trimmed.substring(firstBrace, lastBrace + 1);
+    try {
+      return JSON.parse(jsonCandidate);
+    } catch (e) {}
+  }
+
+  throw new Error("No se pudo interpretar el formato JSON de la respuesta de IA.");
+}
+
 // Obtiene la lista oficial de modelos habilitados para tu API Key y elige el mejor
 async function getBestWorkingModel(apiKey) {
-  // Si ya detectamos uno funcional en esta sesión/dispositivo, úsalo primero
   const cachedModel = localStorage.getItem("gemini_working_model");
   if (cachedModel) return cachedModel;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
-  const res = await fetch(url);
-  
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error?.message || `Error al validar API Key (HTTP ${res.status})`);
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+    const res = await fetch(url);
+    
+    if (res.ok) {
+      const data = await res.json();
+      if (data.models && data.models.length > 0) {
+        const supportedModels = data.models
+          .filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent"))
+          .map(m => m.name.replace(/^models\//, ""));
+
+        const preferred = supportedModels.find(m => m.includes("2.5-flash") || m.includes("2.0-flash") || m.includes("1.5-flash") || m.includes("flash")) || supportedModels[0];
+
+        if (preferred) {
+          localStorage.setItem("gemini_working_model", preferred);
+          return preferred;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Fallo al listar modelos desde endpoint:", err);
   }
 
-  const data = await res.json();
-  if (!data.models || data.models.length === 0) {
-    throw new Error("No hay modelos disponibles para esta clave.");
-  }
-
-  // Filtrar solo los modelos que sirven para generar texto/contenido
-  const supportedModels = data.models
-    .filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent"))
-    .map(m => m.name.replace(/^models\//, "")); // Limpia el prefijo "models/" si viene incluido
-
-  // Priorizar modelos flash rápidos (2.5, 2.0, 1.5) y si no, tomar el primero que exista
-  const preferred = supportedModels.find(m => m.includes("flash")) || supportedModels[0];
-
-  if (!preferred) {
-    throw new Error("No se encontró ningún modelo compatible con generateContent.");
-  }
-
-  localStorage.setItem("gemini_working_model", preferred);
-  return preferred;
+  return "gemini-2.5-flash";
 }
 
 // Ejecuta la llamada garantizando que el modelo existe
 async function callGemini(apiKey, promptText) {
   const cleanKey = apiKey.trim();
-  const model = await getBestWorkingModel(cleanKey);
+  const detected = await getBestWorkingModel(cleanKey);
+  const modelsToTry = [
+    detected,
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-latest"
+  ];
+  const uniqueModels = [...new Set(modelsToTry)];
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: promptText }] }]
-    })
-  });
+  let lastError = null;
 
-  // Si por alguna razón el modelo guardado falla con 404, se borra la caché para auto-recuperar
-  if (response.status === 404) {
-    localStorage.removeItem("gemini_working_model");
-    throw new Error(`El modelo ${model} no está disponible. Vuelve a pulsar para auto-detectar.`);
+  for (const model of uniqueModels) {
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }] }]
+        })
+      });
+
+      if (response.status === 404) {
+        console.warn(`Modelo ${model} no disponible (404), probando siguiente...`);
+        localStorage.removeItem("gemini_working_model");
+        continue;
+      }
+
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.error?.message || `Error HTTP ${response.status}`);
+      }
+
+      if (!result.candidates || !result.candidates[0]?.content?.parts?.[0]?.text) {
+        throw new Error("Respuesta vacía o filtrada por seguridad.");
+      }
+
+      localStorage.setItem("gemini_working_model", model);
+      return { text: result.candidates[0].content.parts[0].text, model };
+
+    } catch (err) {
+      lastError = err;
+      const msg = (err.message || "").toLowerCase();
+      if (msg.includes("404") || msg.includes("not found")) {
+        continue;
+      }
+      throw err;
+    }
   }
 
-  const result = await response.json();
-  if (!response.ok) {
-    throw new Error(result.error?.message || `Error HTTP ${response.status}`);
-  }
-
-  if (!result.candidates || !result.candidates[0]?.content?.parts?.[0]?.text) {
-    throw new Error("Respuesta de Gemini vacía o filtrada.");
-  }
-
-  return { text: result.candidates[0].content.parts[0].text, model };
+  throw new Error(`No se pudo conectar con Gemini: ${lastError?.message || "Error desconocido"}`);
 }
 
 async function motorGemini(clima, transporte, city, apiKey) {
@@ -243,7 +295,7 @@ async function motorGemini(clima, transporte, city, apiKey) {
 - Viento: ${clima.current_weather.windspeed} km/h
 - Modo de transporte elegido por el usuario: ${transporte}
 
-Devuelve EXCLUSIVAMENTE un JSON válido con esta estructura exacta (sin formato markdown adicional):
+Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura (sin formato Markdown adicional):
 {
   "temp": "${Math.round(clima.current_weather.temperature)}°C",
   "consejo": "Consejo directo de estilismo y trayecto en ${transporte} (máx 15 palabras)",
@@ -252,7 +304,7 @@ Devuelve EXCLUSIVAMENTE un JSON válido con esta estructura exacta (sin formato 
 }`;
 
   const { text: raw, model } = await callGemini(apiKey, prompt);
-  const cleanJson = JSON.parse(raw.replace(/```json|```/gi, "").trim());
+  const cleanJson = extractJsonFromText(raw);
   
   return {
     temp: cleanJson.temp || `${Math.round(clima.current_weather.temperature)}°C`,
@@ -291,6 +343,9 @@ async function procesarReporteCompleto() {
 
   if (apiKey) {
     try {
+      keyStatus.textContent = "● Consultando con Gemini...";
+      keyStatus.style.color = "#38bdf8";
+
       resultado = await motorGemini(clima, modoTransporte, coordsActuales.city, apiKey);
       const mod = resultado.modeloUsado || "Gemini";
       keyStatus.textContent = `● Modo Pro Activo: Analizado con ${mod}`;
@@ -298,8 +353,9 @@ async function procesarReporteCompleto() {
     } catch (e) {
       console.warn("Fallo en Gemini, aplicando motor nativo:", e);
       resultado = motorNativo(clima, modoTransporte);
-      keyStatus.textContent = `Aviso: ${e.message}. Mostrando motor básico.`;
+      keyStatus.textContent = `Error IA: ${e.message}. Mostrando motor básico.`;
       keyStatus.style.color = "#f59e0b";
+      alert(`Aviso de Modo Pro: ${e.message}`);
     }
   } else {
     resultado = motorNativo(clima, modoTransporte);
