@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkyBrief • Movilidad & Clima</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0d1424">
+  <!-- Hoja de estilos de Leaflet para el mapa -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- Banner de Calidad del Aire -->
+    <aside id="air-quality-banner" class="air-banner">
+      <div class="air-icon">☁️</div>
+      <div class="air-content">
+        <div class="air-header">
+          <strong>CALIDAD DEL AIRE</strong>
+          <span class="badge-tag">Hoy</span>
+        </div>
+        <p id="air-text">Calculando índice PM2.5...</p>
+      </div>
+    </aside>
+
+    <!-- Tarjeta Principal -->
+    <main class="app-card">
+      <header class="header">
+        <div class="header-top">
+          <span class="tag">REPORTE DEL DÍA</span>
+          <button id="btn-refresh-icon" class="icon-btn" title="Actualizar">⚙️</button>
+        </div>
+        <h1 id="city-title">Tu Ubicación</h1>
+        <p id="temp-display" class="temp">--°C</p>
+      </header>
+
+      <!-- Selector de Transporte -->
+      <div class="transport-selector">
+        <button id="btn-transport-walk" class="transport-pill active" data-mode="metro">🚶 A pie / Metro</button>
+        <button id="btn-transport-car" class="transport-pill" data-mode="coche">🚗 Coche / Moto</button>
+      </div>
+
+      <!-- Tarjeta de Consejo Dinámico -->
+      <section class="alert-box">
+        <p id="alert-text" class="main-advice">Consultando datos...</p>
+        <small id="transport-mode-label" class="sub-advice">Modo transporte: a pie / metro</small>
+      </section>
+
+      <!-- Fila de Métricas Rápidas -->
+      <div class="metrics-grid">
+        <div class="metric-col">
+          <span class="metric-label">VIENTO</span>
+          <strong id="wind-display">-- km/h</strong>
+        </div>
+        <div class="metric-col">
+          <span class="metric-label">ÍNDICE UV</span>
+          <strong id="uv-display">--</strong>
+        </div>
+        <div class="metric-col">
+          <span class="metric-label">LLUVIA</span>
+          <strong id="rain-display">--%</strong>
+        </div>
+      </div>
+
+      <!-- Sugerencias de Vestimenta y Accesorios -->
+      <section class="section">
+        <h3>Qué llevar hoy</h3>
+        <div id="items-list" class="pills-container">
+          <span class="pill">Cargando sugerencias...</span>
+        </div>
+      </section>
+
+      <!-- Paleta de Color de la Luz -->
+      <section class="section">
+        <h3>Paleta de luz del día</h3>
+        <div id="palette-container" class="palette-container"></div>
+      </section>
+
+      <!-- Módulo de Notificación Matutina Diaria -->
+      <section class="section notification-card">
+        <div class="notif-header">
+          <h3>Aviso Matutino Diario</h3>
+          <span id="notif-badge" class="badge-tag">Inactivo</span>
+        </div>
+        <p class="sub-advice">Recibe el consejo del día a la hora que te levantas:</p>
+        <div class="notification-inputs">
+          <input type="time" id="notify-time" value="07:30">
+          <button id="btn-set-alert" type="button" class="btn-secondary">Activar aviso</button>
+        </div>
+        <p id="notify-status" class="subtext-status"></p>
+      </section>
+
+      <!-- Activación de Modo Pro con Gemini -->
+      <section class="pro-card">
+        <div class="pro-header">
+          <h3>Modo Pro: Clave de Gemini</h3>
+          <span class="free-badge">GRATIS</span>
+        </div>
+        <p class="pro-description">
+          Para activar el análisis avanzado de movilidad y estilismo, conecta tu clave gratuita de Google. Tus datos nunca salen de tu navegador.
+        </p>
+        <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" class="btn-studio">
+          👉 Obtener API Key gratis en Google AI Studio
+        </a>
+        <div class="key-input-row">
+          <input type="password" id="api-key" placeholder="Pega tu clave AIzaSy...">
+          <button id="btn-save-key" type="button">Guardar Clave</button>
+        </div>
+        <p id="key-status" class="subtext-status"></p>
+      </section>
+
+      <!-- Mapa de Tráfico y Movilidad -->
+      <section class="section">
+        <div class="map-header">
+          <h3>Estado de Movilidad y Tráfico</h3>
+          <span class="live-dot">• En vivo</span>
+        </div>
+        <p class="map-sub">Incidencias y fluidez en tu entorno inmediato:</p>
+        <div id="map" class="map-view"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js").catch(console.error);
+      });
+    }
+  </script>
+</body>
+</html>

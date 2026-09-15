@@ -1,0 +1,20 @@
+{
+  "name": "skybrief",
+  "version": "1.0.0",
+  "main": "app.js",
+  "scripts": {
+    "build": "node copy-www.js",
+    "sync": "node copy-www.js && npx cap sync android",
+    "open:android": "npx cap open android"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "SkyBrief - Daily Outfit & Weather App",
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^7.6.9",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/local-notifications": "^8.3.1"
+  }
+}

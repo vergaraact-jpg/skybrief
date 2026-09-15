@@ -1,0 +1,30 @@
+name: Enviar Notificacion Matutina
+
+on:
+  schedule:
+    # 06:00 UTC corresponde a las 07:00 / 08:00 en España según horario estacional
+    - cron: '0 6 * * *'
+  workflow_dispatch: # Botón manual para ejecutar pruebas al instante
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependencias
+        run: npm install web-push @google/generative-ai
+
+      - name: Ejecutar script de notificación
+        run: node notify.js
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          WEB_PUSH_SUBSCRIPTION: ${{ secrets.WEB_PUSH_SUBSCRIPTION }}

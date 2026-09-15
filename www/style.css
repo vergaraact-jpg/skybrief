@@ -1,0 +1,212 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  background-color: #080d1a;
+  color: #f8fafc;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100vh;
+  padding: 1rem 0.5rem;
+}
+
+.app-container {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Banner de Aire */
+.air-banner {
+  background: #1e1b13;
+  border: 1px solid #78350f;
+  border-radius: 14px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+.air-icon { font-size: 1.3rem; }
+.air-content { flex: 1; }
+.air-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.7rem; color: #fbbf24; }
+.air-content p { font-size: 0.78rem; color: #d1d5db; margin-top: 0.2rem; line-height: 1.3; }
+.badge-tag { background: #451a03; color: #fde68a; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.65rem; }
+
+/* Tarjeta Principal */
+.app-card {
+  background: #0d1424;
+  border: 1px solid #1e293b;
+  border-radius: 24px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
+}
+
+.header-top { display: flex; justify-content: space-between; align-items: center; }
+.tag { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; color: #38bdf8; }
+.icon-btn { background: none; border: none; font-size: 1rem; cursor: pointer; opacity: 0.7; }
+h1 { font-size: 1.9rem; font-weight: 700; margin-top: 0.2rem; }
+.temp { font-size: 3.4rem; font-weight: 800; line-height: 1; margin: 0.3rem 0; }
+
+/* Selector de transporte */
+.transport-selector { display: flex; gap: 0.5rem; }
+.transport-pill {
+  flex: 1;
+  padding: 0.55rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid #1e293b;
+  background: #111a30;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.transport-pill.active {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #38bdf8;
+}
+
+/* Alerta principal */
+.alert-box {
+  background: #111a2f;
+  border-left: 4px solid #38bdf8;
+  padding: 0.9rem;
+  border-radius: 10px;
+}
+.main-advice { font-size: 0.95rem; font-weight: 500; line-height: 1.35; color: #f1f5f9; }
+.sub-advice { display: block; font-size: 0.75rem; color: #64748b; margin-top: 0.35rem; }
+
+/* Grid de métricas */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: #111a2f;
+  border-radius: 12px;
+  padding: 0.85rem;
+  text-align: center;
+  border: 1px solid #1e293b;
+}
+.metric-label { display: block; font-size: 0.65rem; color: #64748b; font-weight: 700; margin-bottom: 0.25rem; }
+.metric-col strong { font-size: 0.95rem; color: #e2e8f0; }
+
+/* Secciones genéricas */
+.section h3 { font-size: 0.75rem; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+.pills-container { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.pill { background: #162038; border: 1px solid #23314f; color: #cbd5e1; padding: 0.4rem 0.75rem; border-radius: 20px; font-size: 0.8rem; }
+
+.palette-container { display: flex; height: 38px; border-radius: 8px; overflow: hidden; }
+.swatch { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+
+/* Pro Card */
+.pro-card {
+  background: #111a2f;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.pro-header { display: flex; justify-content: space-between; align-items: center; }
+.pro-header h3 { font-size: 0.85rem; color: #f8fafc; margin: 0; }
+.free-badge { background: #0284c7; color: #fff; font-size: 0.65rem; font-weight: 700; padding: 0.15rem 0.4rem; border-radius: 4px; }
+.pro-description { font-size: 0.75rem; color: #94a3b8; line-height: 1.35; }
+.btn-studio {
+  display: inline-block;
+  background: #172554;
+  border: 1px solid #1d4ed8;
+  color: #93c5fd;
+  text-decoration: none;
+  font-size: 0.75rem;
+  padding: 0.5rem;
+  border-radius: 8px;
+  text-align: center;
+  font-weight: 600;
+}
+.key-input-row { display: flex; gap: 0.5rem; }
+.key-input-row input {
+  flex: 1;
+  background: #090d18;
+  border: 1px solid #1e293b;
+  color: #fff;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+.key-input-row button {
+  background: #0284c7;
+  color: #fff;
+  border: none;
+  padding: 0.5rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.subtext-status { font-size: 0.7rem; color: #38bdf8; min-height: 0.9rem; }
+
+/* Mapa */
+.map-header { display: flex; justify-content: space-between; align-items: center; }
+.live-dot { font-size: 0.7rem; color: #22c55e; font-weight: 600; }
+.map-sub { font-size: 0.75rem; color: #64748b; margin-bottom: 0.5rem; }
+.map-view { height: 180px; width: 100%; border-radius: 12px; border: 1px solid #1e293b; z-index: 1; }
+
+/* Módulo de Notificaciones */
+.notification-card {
+  background: #111a2f;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.notif-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.notification-inputs {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.notification-inputs input[type="time"] {
+  background: #090d18;
+  border: 1px solid #1e293b;
+  color: #fff;
+  padding: 0.5rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.btn-secondary {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #38bdf8;
+  padding: 0.5rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-secondary:hover {
+  background: #334155;
+}
+
