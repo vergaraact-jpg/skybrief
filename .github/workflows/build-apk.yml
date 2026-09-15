@@ -5,6 +5,9 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -41,10 +44,31 @@ jobs:
         run: |
           cd android
           ./gradlew assembleDebug --stacktrace
+          cd ..
+          cp android/app/build/outputs/apk/debug/app-debug.apk ./SkyBrief.apk
 
       - name: Subir APK como artefacto
         uses: actions/upload-artifact@v4
         with:
           name: SkyBrief-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: ./SkyBrief.apk
           if-no-files-found: error
+
+      - name: Publicar Release directa en GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: "SkyBrief para Android v1.0.0"
+          body: |
+            ### 📱 SkyBrief - App Nativa para Android
+            Descarga e instala directamente el archivo `.apk` en tu móvil.
+            
+            - ✨ Clima en tiempo real y calidad del aire.
+            - 🚶/🚗 Selector de movilidad y estilismo diario.
+            - 🗺️ Mapa interactivo Leaflet.
+            - ⏰ Alarma matutina con notificaciones nativas en segundo plano.
+          files: ./SkyBrief.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
