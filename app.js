@@ -7,6 +7,14 @@ let datosMeteorologicos = null;
 let coordsActuales = { ...DEFAULT_COORDS };
 let mapa = null;
 
+// Modelos a probar en orden de prioridad
+const FALLBACK_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-latest"
+];
+
 // Elementos DOM
 const cityTitle = document.getElementById("city-title");
 const tempDisplay = document.getElementById("temp-display");
@@ -25,10 +33,12 @@ const btnWalk = document.getElementById("btn-transport-walk");
 const btnCar = document.getElementById("btn-transport-car");
 const btnRefresh = document.getElementById("btn-refresh-icon");
 
-// Cargar clave guardada
+// Cargar clave guardada al iniciar
 if (localStorage.getItem("gemini_key")) {
   apiKeyInput.value = localStorage.getItem("gemini_key");
-  keyStatus.textContent = "Clave guardada activa (Modo Pro IA listo)";
+  const modeloGuardado = localStorage.getItem("gemini_selected_model") || "Gemini Flash";
+  keyStatus.textContent = `● Modo Pro Activo (${modeloGuardado})`;
+  keyStatus.style.color = "#38bdf8";
 }
 
 // ==========================================
@@ -55,11 +65,14 @@ btnSaveKey.addEventListener("click", () => {
   const clave = apiKeyInput.value.trim();
   if (clave) {
     localStorage.setItem("gemini_key", clave);
-    keyStatus.textContent = "Clave vinculada correctamente. Recalculando con IA...";
+    keyStatus.textContent = "Clave guardada. Consultando con Gemini...";
+    keyStatus.style.color = "#38bdf8";
     procesarReporteCompleto();
   } else {
     localStorage.removeItem("gemini_key");
-    keyStatus.textContent = "Clave eliminada (Modo Nativo activo).";
+    localStorage.removeItem("gemini_selected_model");
+    keyStatus.textContent = "Clave eliminada. Modo Básico activo.";
+    keyStatus.style.color = "#94a3b8";
     procesarReporteCompleto();
   }
 });
@@ -162,15 +175,64 @@ function motorNativo(clima, transporte) {
   return { temp: `${temp}°C`, consejo, items, paleta };
 }
 
+// Llamada protegida a Gemini con fallback automático entre modelos
+async function callGemini(apiKey, promptText) {
+  let lastError = null;
+
+  for (const model of FALLBACK_MODELS) {
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }] }]
+        })
+      });
+
+      // Si da 404, prueba con el siguiente modelo del bucle
+      if (response.status === 404) {
+        console.warn(`Modelo ${model} no disponible (404), probando siguiente...`);
+        continue;
+      }
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error?.message || `Error HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data.candidates || !data.candidates[0]?.content?.parts?.[0]?.text) {
+        throw new Error("Respuesta de Gemini vacía.");
+      }
+
+      // Guardar el modelo que funcionó para futuras consultas
+      localStorage.setItem("gemini_selected_model", model);
+      return { text: data.candidates[0].content.parts[0].text, model };
+
+    } catch (err) {
+      lastError = err;
+      const errMsg = (err.message || "").toLowerCase();
+      if (errMsg.includes("404") || errMsg.includes("not found")) {
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw new Error(`Ningún modelo compatible respondió. Último error: ${lastError?.message || "Modelo no encontrado"}`);
+}
+
 async function motorGemini(clima, transporte, city, apiKey) {
-  const prompt = `Analiza estos datos de ${city}:
+  const prompt = `Analiza estos datos meteorológicos de ${city}:
 - Temp: ${clima.current_weather.temperature}°C (Máx: ${clima.daily.temperature_2m_max[0]}°C, Mín: ${clima.daily.temperature_2m_min[0]}°C)
-- Lluvia: ${clima.daily.precipitation_probability_max[0]}%
+- Prob. lluvia: ${clima.daily.precipitation_probability_max[0]}%
 - UV: ${clima.daily.uv_index_max[0]}
 - Viento: ${clima.current_weather.windspeed} km/h
 - Modo de transporte elegido por el usuario: ${transporte}
 
-Devuelve ESTRICTAMENTE este formato JSON:
+Devuelve EXCLUSIVAMENTE un JSON válido con esta estructura exacta (sin formato markdown adicional):
 {
   "temp": "${Math.round(clima.current_weather.temperature)}°C",
   "consejo": "Consejo directo de estilismo y trayecto en ${transporte} (máx 15 palabras)",
@@ -178,16 +240,16 @@ Devuelve ESTRICTAMENTE este formato JSON:
   "paleta": ["#HEX1", "#HEX2", "#HEX3"]
 }`;
 
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-  });
-
-  if (!res.ok) throw new Error("Fallo en respuesta de Gemini");
-  const data = await res.json();
-  const raw = data.candidates[0].content.parts[0].text;
-  return JSON.parse(raw.replace(/```json|```/gi, "").trim());
+  const { text: raw, model } = await callGemini(apiKey, prompt);
+  const cleanJson = JSON.parse(raw.replace(/```json|```/gi, "").trim());
+  
+  return {
+    temp: cleanJson.temp || `${Math.round(clima.current_weather.temperature)}°C`,
+    consejo: cleanJson.consejo || cleanJson.advice || "Día estable.",
+    items: cleanJson.items || cleanJson.que_llevar || cleanJson.queLlevar || ["Ropa cómoda"],
+    paleta: cleanJson.paleta || cleanJson.paleta_luz || cleanJson.palette || ["#38BDF8", "#94A3B8", "#0F172A"],
+    modeloUsado: model
+  };
 }
 
 // ==========================================
@@ -219,12 +281,13 @@ async function procesarReporteCompleto() {
   if (apiKey) {
     try {
       resultado = await motorGemini(clima, modoTransporte, coordsActuales.city, apiKey);
-      keyStatus.textContent = "● Modo Pro Activo: Analizado con Gemini Flash";
+      const mod = resultado.modeloUsado || "Gemini Flash";
+      keyStatus.textContent = `● Modo Pro Activo: Analizado con ${mod}`;
       keyStatus.style.color = "#38bdf8";
     } catch (e) {
       console.warn("Fallo en Gemini, aplicando motor nativo:", e);
       resultado = motorNativo(clima, modoTransporte);
-      keyStatus.textContent = "Clave no válida o error de cuota. Mostrando motor básico.";
+      keyStatus.textContent = `Aviso: ${e.message}. Mostrando motor básico.`;
       keyStatus.style.color = "#f59e0b";
     }
   } else {
@@ -383,5 +446,3 @@ setInterval(() => {
     }
   }
 }, 1000);
-
-
