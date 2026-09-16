@@ -623,90 +623,72 @@ async function procesarReporteCompleto() {
   }
 
   // Comprobar alertas críticas (Sismos USGS y clima extremo)
-  await verificarAlertasCriticas(clima, coordsActuales);
+  await verificarAlertasCriticas(clima);
 }
 
 // ==========================================
 // 7.1 GESTOR DE ALERTAS CRÍTICAS (SISMOS Y CLIMA SEVERO)
 // ==========================================
-async function consultarSismosCercanos(lat, lon) {
+const USER_LAT = 40.4168;
+const USER_LON = -3.7038;
+
+async function verificarAlertasCriticas(weatherData) {
+  const banner = document.getElementById("critical-alert");
+  const title = document.getElementById("alert-title");
+  const message = document.getElementById("alert-message");
+
+  if (!banner || !title || !message) return;
+
+  let alertaActiva = false;
+  let textoAlerta = "";
+  let subtitulo = "";
+
+  const lat = typeof coordsActuales !== "undefined" && coordsActuales.lat ? coordsActuales.lat : USER_LAT;
+  const lon = typeof coordsActuales !== "undefined" && coordsActuales.lon ? coordsActuales.lon : USER_LON;
+
+  // 1. Verificación Sísmica (API USGS: magnitud >= 3.0 en radio de 300km)
   try {
-    const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const url = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=${hace24h}&latitude=${lat}&longitude=${lon}&maxradiuskm=350&minmagnitude=3.5`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data.features && data.features.length > 0) {
-      const sismo = data.features[0].properties;
-      return {
-        mag: sismo.mag,
-        lugar: sismo.place || "Zona cercana",
-        hora: new Date(sismo.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
+    const sismoUrl = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${lat}&longitude=${lon}&maxradiuskm=300&minmagnitude=3.0`;
+    const sismoRes = await fetch(sismoUrl);
+    const sismoData = await sismoRes.json();
+
+    if (sismoData.features && sismoData.features.length > 0) {
+      const sismo = sismoData.features[0].properties;
+      alertaActiva = true;
+      subtitulo = "Alerta Sísmica Reciente";
+      textoAlerta = `Registrado sismo M ${sismo.mag} en ${sismo.place}.`;
     }
-    return null;
-  } catch (e) {
-    console.warn("Fallo al consultar USGS Earthquake API:", e);
-    return null;
-  }
-}
-
-async function verificarAlertasCriticas(clima, coords) {
-  const criticalBanner = document.getElementById("critical-alert");
-  const alertTitle = document.getElementById("alert-title");
-  const alertMessage = document.getElementById("alert-message");
-  if (!criticalBanner || !alertTitle || !alertMessage) return;
-
-  const currentWind = Math.round(clima.current?.wind_speed_10m ?? clima.current_weather?.windspeed ?? 0);
-  const maxWind = Math.round(clima.daily?.wind_speed_10m_max?.[0] ?? clima.daily?.windspeed_10m_max?.[0] ?? currentWind);
-  const gusts = Math.round(clima.current?.wind_gusts_10m ?? clima.daily?.wind_gusts_10m_max?.[0] ?? 0);
-  const weatherCode = clima.current?.weather_code ?? clima.current_weather?.weathercode ?? 0;
-  const tempActual = Math.round(clima.current?.temperature_2m ?? clima.current_weather?.temperature ?? 20);
-
-  // 1. Comprobar terremotos recientes (USGS)
-  const sismo = await consultarSismosCercanos(coords.lat, coords.lon);
-  if (sismo) {
-    alertTitle.textContent = `🚨 ALERTA SÍSMICA • Magnitud ${sismo.mag}`;
-    alertMessage.textContent = `Sismo de M ${sismo.mag} registrado a las ${sismo.hora} (${sismo.lugar}). Sigue protocolos oficiales de seguridad.`;
-    criticalBanner.classList.remove("hidden");
-    return;
+  } catch (err) {
+    console.warn("No se pudo verificar USGS:", err);
   }
 
-  // 2. Comprobar vientos extremos o huracanados (>70 km/h)
-  const maxVientoDetectado = Math.max(currentWind, maxWind, gusts);
-  if (maxVientoDetectado >= 70) {
-    alertTitle.textContent = "⚠️ ALERTA METEOROLÓGICA • VIENTO EXTREMO";
-    alertMessage.textContent = `Ráfagas peligrosas de ${maxVientoDetectado} km/h. Aléjate de cornisas, árboles y evita el uso de motos/bicicletas.`;
-    criticalBanner.classList.remove("hidden");
-    return;
+  // 2. Si no hay sismo, verificar fenómenos meteorológicos severos
+  if (!alertaActiva && weatherData) {
+    const viento = Math.round(weatherData.current_weather?.windspeed || weatherData.current?.wind_speed_10m || 0);
+    const weatherCode = weatherData.current_weather?.weathercode || weatherData.current?.weather_code || 0;
+
+    // Vientos muy fuertes (> 70 km/h)
+    if (viento >= 70) {
+      alertaActiva = true;
+      subtitulo = "Aviso de Viento Severo";
+      textoAlerta = `Rachas peligrosas de ${viento} km/h. Precaución en carretera y vía pública.`;
+    } 
+    // Códigos WMO de tormenta eléctrica fuerte o granizo (95, 96, 99)
+    else if ([95, 96, 99].includes(weatherCode)) {
+      alertaActiva = true;
+      subtitulo = "Tormenta Eléctrica / Granizo";
+      textoAlerta = "Riesgo de tormenta severa inminente en la zona.";
+    }
   }
 
-  // 3. Tormentas severas / granizo (WMO >= 95)
-  if (weatherCode >= 95) {
-    alertTitle.textContent = "⚠️ ALERTA METEOROLÓGICA • TORMENTA SEVERA";
-    alertMessage.textContent = "Tormenta eléctrica violenta con riesgo de granizo y anegamientos en curso.";
-    criticalBanner.classList.remove("hidden");
-    return;
+  // 3. Renderizar o mantener oculto
+  if (alertaActiva) {
+    title.textContent = subtitulo;
+    message.textContent = textoAlerta;
+    banner.classList.remove("hidden");
+  } else {
+    banner.classList.add("hidden");
   }
-
-  // 4. Frío polar / helada extrema (<= -5°C)
-  if (tempActual <= -5) {
-    alertTitle.textContent = "❄️ ALERTA POR FRÍO EXTREMO";
-    alertMessage.textContent = `Temperaturas bajo cero severas (${tempActual}°C). Alto riesgo de calzada helada y congelación.`;
-    criticalBanner.classList.remove("hidden");
-    return;
-  }
-
-  // 5. Ola de calor peligrosa (>= 41°C)
-  if (tempActual >= 41) {
-    alertTitle.textContent = "🔥 ALERTA POR CALOR EXTREMO";
-    alertMessage.textContent = `Riesgo térmico severo (${tempActual}°C). Evita actividades al aire libre y maximiza la hidratación.`;
-    criticalBanner.classList.remove("hidden");
-    return;
-  }
-
-  // Si las condiciones son estables, mantener oculto
-  criticalBanner.classList.add("hidden");
 }
 
 async function iniciarApp() {
