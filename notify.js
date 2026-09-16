@@ -73,6 +73,31 @@ function analizarCambioIntradia(hourlyData) {
   };
 }
 
+function extractJsonFromText(rawText) {
+  if (!rawText) return null;
+  const trimmed = rawText.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch (e) {}
+
+  const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (codeBlockMatch && codeBlockMatch[1]) {
+    try {
+      return JSON.parse(codeBlockMatch[1].trim());
+    } catch (e) {}
+  }
+
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(trimmed.substring(firstBrace, lastBrace + 1));
+    } catch (e) {}
+  }
+
+  return null;
+}
+
 async function run() {
   if (!GEMINI_API_KEY) throw new Error("Falta GEMINI_API_KEY");
   if (!NTFY_TOPIC) throw new Error("Falta NTFY_TOPIC");
@@ -85,64 +110,98 @@ async function run() {
 
   const tempActual = Math.round(wData.current_weather.temperature);
   const tempMin = Math.round(wData.daily.temperature_2m_min[0]);
+  const tempMax = Math.round(wData.daily.temperature_2m_max[0]);
   const lluviaProb = wData.daily.precipitation_probability_max[0];
   const vientoMax = Math.round(wData.daily.windspeed_10m_max[0]);
   const weatherCode = wData.current_weather.weathercode;
   const intradia = analizarCambioIntradia(wData.hourly);
 
-  // 2. Prompt enfocado en Clima general + Módulo Coche/Tráfico + Intradía
-  const prompt = `Actúa como asesor meteorológico y vial para Madrid.
-Datos de hoy:
-- Temperatura actual: ${tempActual}°C (Mín: ${tempMin}°C)
+  // 2. Prompt Kumo enfocado en personalidad fresca, ropa y estado vial
+  const systemInstruction = `Eres "Kumo", una pequeña copiloto meteorológica chibi (chica con gafas, pelo negro y piel mulata), despierta, con energía fresca y directa.
+Tu trabajo: dar el resumen del tiempo, la ropa recomendada y el estado vial/conducción del día para Madrid.
+
+Reglas estrictas de tono:
+1. NADA de diminutivos cursis (prohibido: "abriguito", "gotitas", "brrr", "waaa").
+2. Habla de tú a tú, cercano pero con ironía limpia o humor práctico.
+3. Máximo 35 palabras en el mensaje.
+4. Formato JSON estricto:
+{
+  "titular": "Madrid a ${tempActual}°C: titular conciso e irónico o directo",
+  "mensaje": "Mensaje directo con ropa y recomendación vial",
+  "mood": "sol" | "lluvia" | "frio" | "viento" | "alerta" | "neutral"
+}`;
+
+  const prompt = `${systemInstruction}
+
+Datos meteorológicos de Madrid:
+- Temp actual: ${tempActual}°C (Mín: ${tempMin}°C, Máx: ${tempMax}°C)
 - Análisis intradía (10h vs 19h): ${intradia.aviso || "Sin cambios bruscos"}
 - Probabilidad de lluvia: ${lluviaProb}%
 - Viento máx: ${vientoMax} km/h
 - Código WMO: ${weatherCode}
 
-Devuelve EXACTAMENTE dos líneas cortas (máximo 120 caracteres en total):
-Línea 1: Ropa recomendada y sensación térmica (incluye aviso si hay cambio brusco intradía).
-Línea 2: [Coche & Vía]: Estado del vehículo (parabrisas/hielo si hace frío) y recomendación de conducción (adherencia, visibilidad o viento).`;
+Responde exclusivamente con el JSON estricto:`;
 
-  let mensaje;
+  let titularFinal = `Madrid a ${tempActual}°C`;
+  let mensajeFinal = "Tiempo agradable. Ropa cómoda y calzado ligero.";
+  let moodDetectado = "neutral";
+
   try {
-    mensaje = await callGemini(prompt);
+    const raw = await callGemini(prompt);
+    const parsed = extractJsonFromText(raw);
+    if (parsed && parsed.mensaje) {
+      titularFinal = parsed.titular || titularFinal;
+      mensajeFinal = parsed.mensaje;
+      moodDetectado = (parsed.mood || "neutral").toLowerCase();
+    } else if (raw) {
+      mensajeFinal = raw.replace(/[{}"]/g, "").trim();
+    }
   } catch (err) {
-    console.warn("Fallo en Gemini, generando mensaje nativo de respaldo:", err.message);
-    let ropa = tempActual > 22 ? "Ropa fresca y ligera." : tempActual < 12 ? "Abrigo y chaqueta cortavientos." : "Ropa de entretiempo.";
-    if (intradia.aviso) ropa += ` ${intradia.aviso}`;
-    const via = lluviaProb > 40 ? "[Coche & Vía]: Calzada húmeda, aumenta distancia de frenado." : tempMin <= 3 ? "[Coche & Vía]: Revisa escarcha en lunas y batería." : "[Coche & Vía]: Asfalto seco y buena adherencia.";
-    mensaje = `${ropa}\n${via}`;
+    console.warn("Fallo en Gemini, generando mensaje nativo Kumo de respaldo:", err.message);
+    if (lluviaProb >= 40) {
+      titularFinal = `Madrid a ${tempActual}°C: Lluvia a la vista`;
+      mensajeFinal = `Luz difusa y asfalto mojado. Saca el paraguas, chubasquero y duplica la distancia en coche.${intradia.aviso ? " " + intradia.aviso : ""}`;
+      moodDetectado = "lluvia";
+    } else if (tempMin <= 4 || tempActual <= 5) {
+      titularFinal = `Madrid a ${tempActual}°C: Frío cortante`;
+      mensajeFinal = `Luz limpia pero aire helado. Abrigo cortavientos, calzado térmico y revisa escarcha en lunas.${intradia.aviso ? " " + intradia.aviso : ""}`;
+      moodDetectado = "frio";
+    } else if (tempActual >= 28 || tempMax >= 30) {
+      titularFinal = `Madrid a ${tempActual}°C: Sol de justicia`;
+      mensajeFinal = "Luz dura y calor directo. Ropa fresca, hidratación y ventila el habitáculo antes de arrancar.";
+      moodDetectado = "sol";
+    } else {
+      titularFinal = `Madrid a ${tempActual}°C: Día templado`;
+      mensajeFinal = `Luz neutra y condiciones estables. Ropa cómoda de entretiempo y calzado ligero.${intradia.aviso ? " " + intradia.aviso : ""}`;
+      moodDetectado = "neutral";
+    }
   }
 
   // 3. Selección de condición climática visual (Sol, Lluvia, Frío, Calor)
   let tag = "sunny,sun_with_face";
   let iconoClima = "☀️";
-  let tituloClima = "Soleado";
   let iconUrl = "https://raw.githubusercontent.com/vergaraact-jpg/skybrief/main/icons/weather-sun.png";
 
-  if (lluviaProb >= 40 || (weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 99)) {
+  if (moodDetectado === "lluvia" || lluviaProb >= 40 || (weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 99)) {
     tag = "rain_cloud,umbrella,droplet";
     iconoClima = "🌧️";
-    tituloClima = "Lluvia prevista";
     iconUrl = "https://raw.githubusercontent.com/vergaraact-jpg/skybrief/main/icons/weather-rain.png";
-  } else if (tempMin <= 4 || tempActual <= 5) {
+  } else if (moodDetectado === "frio" || tempMin <= 4 || tempActual <= 5) {
     tag = "snowflake,cold_face,ice_cube";
     iconoClima = "❄️";
-    tituloClima = "Frío Intenso";
     iconUrl = "https://raw.githubusercontent.com/vergaraact-jpg/skybrief/main/icons/weather-cold.png";
-  } else if (tempActual >= 28 || (wData.daily?.temperature_2m_max?.[0] >= 30)) {
+  } else if (moodDetectado === "sol" || tempActual >= 28 || tempMax >= 30) {
     tag = "hot_face,fire,sun";
     iconoClima = "🔥";
-    tituloClima = "Calor Intenso";
     iconUrl = "https://raw.githubusercontent.com/vergaraact-jpg/skybrief/main/icons/weather-heat.png";
   }
 
   // 4. Envío a ntfy con Icono e Imagen adjunta
   const pushRes = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
     method: "POST",
-    body: `${iconoClima} ${mensaje}`,
+    body: `${iconoClima} ${mensajeFinal}`,
     headers: {
-      "Title": `${iconoClima} Madrid ${tempActual}°C • ${tituloClima}`,
+      "Title": `${iconoClima} Kumo • ${titularFinal}`,
       "Priority": lluviaProb > 60 || tempMin <= 2 ? "high" : "default",
       "Tags": tag,
       "Icon": iconUrl
@@ -150,7 +209,7 @@ Línea 2: [Coche & Vía]: Estado del vehículo (parabrisas/hielo si hace frío) 
   });
 
   if (!pushRes.ok) throw new Error(`Fallo ntfy: ${pushRes.status}`);
-  console.log("Notificación enviada con éxito a ntfy.sh/" + NTFY_TOPIC + " [" + tituloClima + "]:\n", mensaje);
+  console.log("Notificación Kumo enviada con éxito a ntfy.sh/" + NTFY_TOPIC + ":\n[" + titularFinal + "]\n" + mensajeFinal);
 }
 
 run().catch(err => {

@@ -59,8 +59,21 @@
         <button id="btn-transport-car" class="transport-pill" data-mode="coche">🚗 Coche / Moto</button>
       </div>
 
-      <!-- Tarjeta de Consejo Dinámico -->
-      <section class="alert-box">
+      <!-- Tarjeta de Consejo Dinámico con Kumo -->
+      <section class="alert-box kumo-card">
+        <div class="kumo-header">
+          <div class="kumo-avatar-wrapper">
+            <img id="kumo-avatar" src="icons/kumo-avatar.png" alt="Kumo Chibi" class="kumo-avatar-img">
+            <span id="kumo-mood-badge" class="kumo-mood-indicator">✨</span>
+          </div>
+          <div class="kumo-meta">
+            <div class="kumo-tag-row">
+              <span class="kumo-tag">KUMO • COPILOTO</span>
+              <span id="kumo-mood-tag" class="kumo-mood-pill">Directa & práctica</span>
+            </div>
+            <h2 id="kumo-headline" class="kumo-headline">Cargando reporte...</h2>
+          </div>
+        </div>
         <p id="alert-text" class="main-advice">Consultando datos...</p>
         <small id="transport-mode-label" class="sub-advice">Modo transporte: a pie / metro</small>
       </section>

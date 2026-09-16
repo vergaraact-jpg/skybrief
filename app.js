@@ -280,7 +280,7 @@ function analizarCambioIntradia(hourlyData, schedule) {
   };
 }
 
-function motorNativo(clima, transporte, schedule) {
+function motorNativo(clima, transporte, city, schedule) {
   const temp = Math.round(clima.current?.temperature_2m ?? clima.current_weather?.temperature ?? 20);
   const probLluvia = clima.daily?.precipitation_probability_max?.[0] ?? 0;
   const viento = Math.round(clima.current?.wind_speed_10m ?? clima.current_weather?.windspeed ?? 10);
@@ -288,35 +288,51 @@ function motorNativo(clima, transporte, schedule) {
   const intradia = clima.hourly ? analizarCambioIntradia(clima.hourly, schedule) : { aviso: null };
 
   let items = [];
-  let consejo = "Tiempo agradable. Ropa cómoda y ligera.";
+  let titular = `${city || "Madrid"} a ${temp}°C: Día templado`;
+  let mensaje = "Luz neutra y condiciones estables. Ponte ropa cómoda de entretiempo y calzado ligero.";
   let paleta = ["#38BDF8", "#94A3B8", "#0F172A"];
+  let mood = "neutral";
 
-  if (temp > 28) {
-    consejo = transporte === "coche" 
-      ? "Calor alto. Ventila el habitáculo antes de conducir." 
-      : "Calor intenso en trayectos a pie. Hidratación continua.";
-    items.push("Prenda fresca", "Gorra o sombrero", "Gafas de sol");
-    paleta = ["#b45309", "#f59e0b", "#fef3c7"];
-  } else if (temp < 14) {
-    consejo = "Ambiente fresco. Imprescindible chaqueta o capa cortavientos.";
-    items.push("Chaqueta estructurada", "Calzado cerrado");
+  if (probLluvia >= 40) {
+    mood = "lluvia";
+    titular = `${city || "Madrid"} a ${temp}°C: Lluvia a la vista`;
+    mensaje = transporte === "coche"
+      ? "Luz gris y asfalto mojado. Coge chaqueta impermeable y duplica la distancia de frenado."
+      : "Luz difusa y cielo cubierto. Saca el paraguas, chubasquero y ahórrate el peinado.";
+    items.push(transporte === "coche" ? "Chaqueta impermeable" : "Paraguas resistente", "Calzado impermeable");
+    paleta = ["#0284c7", "#38bdf8", "#0f172a"];
+  } else if (temp >= 28) {
+    mood = "sol";
+    titular = `${city || "Madrid"} a ${temp}°C: Sol de justicia`;
+    mensaje = transporte === "coche"
+      ? "Luz dura y reflejos intensos. Ventila el habitáculo antes de arrancar y usa gafas de sol."
+      : "Luz radiante y calor directo. Ropa de lino o algodón fresco, hidratación y sombra.";
+    items.push("Ropa fresca", "Gafas de sol", "Gorra transpirable");
+    paleta = ["#f59e0b", "#fbbf24", "#78350f"];
+  } else if (temp <= 12) {
+    mood = "frio";
+    titular = `${city || "Madrid"} a ${temp}°C: Frío cortante`;
+    mensaje = "Luz limpia pero aire helado. Chaqueta estructurada o abrigo cortavientos y calzado cerrado.";
+    items.push("Chaqueta gruesa", "Calzado térmico", "Bufanda o cuello");
     paleta = ["#1e293b", "#475569", "#cbd5e1"];
+  } else if (viento >= 35) {
+    mood = "viento";
+    titular = `${city || "Madrid"} a ${temp}°C: Viento molesto`;
+    mensaje = "Rachas continuas. Cortavientos cerrado y cuidado con objetos sueltos.";
+    items.push("Chaqueta cortavientos", "Calzado cerrado");
+    paleta = ["#334155", "#64748b", "#94a3b8"];
   } else {
-    items.push("Prenda principal", "Calzado cómodo");
+    items.push("Prenda principal", "Calzado cómodo", "Gafas de sol");
   }
 
-  if (intradia.aviso) {
-    consejo = intradia.aviso;
+  if (intradia && intradia.aviso) {
+    mensaje += ` ${intradia.aviso}`;
     if (intradia.difTemp <= -7 || intradia.difTemp >= 8) items.push("Capa de ropa extra");
-    if (intradia.aviso.includes("paraguas")) items.push("Paraguas compacto");
-  } else if (probLluvia > 40) {
-    consejo += " Probabilidad de precipitaciones.";
-    items.push(transporte === "coche" ? "Líquido limpiaparabrisas" : "Paraguas compacto");
   }
 
   if (uv >= 6) items.push("Protector solar");
 
-  return { temp: `${temp}°C`, consejo, items, paleta, intradia };
+  return { temp: `${temp}°C`, titular, mensaje, items, paleta, mood, intradia };
 }
 
 // Extractor de JSON universal y seguro
@@ -466,7 +482,26 @@ async function motorGemini(clima, transporte, city, apiKey, schedule) {
 
   const intradia = clima.hourly ? analizarCambioIntradia(clima.hourly, schedule) : { aviso: null };
 
-  const prompt = `Analiza estos datos meteorológicos de ${city}:
+  const systemInstruction = `Eres "Kumo", una pequeña copiloto meteorológica chibi (chica con gafas, pelo negro y piel mulata), despierta, con energía fresca y directa.
+Tu trabajo: dar el resumen del tiempo, la ropa recomendada y la calidad de luz del día.
+
+Reglas estrictas de tono:
+1. NADA de diminutivos cursis (prohibido: "abriguito", "gotitas", "brrr", "waaa").
+2. Habla de tú a tú, cercano pero con ironía limpia o humor práctico (ej: "12°C y lluvia: saca el chubasquero y ahórrate el peinado").
+3. Incluye siempre el dato visual útil para foto/luz si el día lo amerita (ej: "Luz dorada", "Luz difusa").
+4. Longitud: Máximo 35 palabras en total en el mensaje.
+5. Formato JSON estricto:
+{
+  "titular": "${city} a ${currentTemp}°C: titular conciso descriptivo",
+  "mensaje": "Mensaje directo con ropa recomendada y luz",
+  "items": ["Prenda 1", "Accesorio 2", "Accesorio 3"],
+  "paleta": ["#HEX1", "#HEX2", "#HEX3"],
+  "mood": "sol" | "lluvia" | "frio" | "viento" | "alerta" | "neutral"
+}`;
+
+  const prompt = `${systemInstruction}
+
+Datos meteorológicos de ${city}:
 - Temp actual: ${currentTemp}°C (Máx: ${maxTemp}°C, Mín: ${minTemp}°C)
 - Tramos del día elegidos por el usuario:
   * Mañana (${schedule.morning}:00): ${tempManana}°C
@@ -478,22 +513,18 @@ async function motorGemini(clima, transporte, city, apiKey, schedule) {
 - Viento: ${viento} km/h
 - Modo de transporte elegido por el usuario: ${transporte}
 
-Responde exclusivamente con un JSON válido con este formato:
-{
-  "temp": "${currentTemp}°C",
-  "consejo": "Consejo directo de ropa y trayecto en ${transporte} adaptado al día (máx 15 palabras)",
-  "items": ["Prenda 1", "Accesorio 2", "Accesorio 3"],
-  "paleta": ["#HEX1", "#HEX2", "#HEX3"]
-}`;
+Responde exclusivamente con el JSON estricto:`;
 
   const { text: raw, model } = await callGeminiAutoDetect(apiKey, prompt);
   const cleanJson = extractJsonFromText(raw);
   
   return {
     temp: cleanJson.temp || `${currentTemp}°C`,
-    consejo: cleanJson.consejo || cleanJson.advice || "Día estable.",
+    titular: cleanJson.titular || `${city} a ${currentTemp}°C`,
+    mensaje: cleanJson.mensaje || cleanJson.consejo || cleanJson.advice || "Día estable.",
     items: cleanJson.items || cleanJson.que_llevar || cleanJson.queLlevar || ["Ropa cómoda"],
     paleta: cleanJson.paleta || cleanJson.paleta_luz || cleanJson.palette || ["#38BDF8", "#94A3B8", "#0F172A"],
+    mood: (cleanJson.mood || "neutral").toLowerCase(),
     modeloUsado: model
   };
 }
@@ -631,7 +662,7 @@ async function procesarReporteCompleto() {
 
   if (apiKey) {
     try {
-      keyStatus.textContent = "● Analizando clima y tramos con IA...";
+      keyStatus.textContent = "● Kumo analizando clima y tramos...";
       keyStatus.style.color = "#38bdf8";
 
       resultado = await motorGemini(clima, modoTransporte, coordsActuales.city, apiKey, schedule);
@@ -640,19 +671,48 @@ async function procesarReporteCompleto() {
       keyStatus.style.color = "#38bdf8";
     } catch (e) {
       console.warn("Fallo en Gemini, aplicando motor nativo:", e);
-      resultado = motorNativo(clima, modoTransporte, schedule);
+      resultado = motorNativo(clima, modoTransporte, coordsActuales.city, schedule);
       keyStatus.textContent = `Aviso: ${e.message}`;
       keyStatus.style.color = "#f59e0b";
     }
   } else {
-    resultado = motorNativo(clima, modoTransporte, schedule);
+    resultado = motorNativo(clima, modoTransporte, coordsActuales.city, schedule);
     keyStatus.textContent = "Modo Básico Activo (Sin IA)";
     keyStatus.style.color = "#94a3b8";
   }
 
   // Pintar en pantalla
   if (tempElem) tempElem.textContent = resultado.temp;
-  alertText.textContent = resultado.consejo;
+
+  const kumoHeadline = document.getElementById("kumo-headline");
+  const kumoMoodBadge = document.getElementById("kumo-mood-badge");
+  const kumoMoodTag = document.getElementById("kumo-mood-tag");
+
+  const moodEmojis = {
+    sol: "☀️",
+    lluvia: "🌧️",
+    frio: "❄️",
+    viento: "💨",
+    alerta: "⚠️",
+    neutral: "✨"
+  };
+
+  const moodLabels = {
+    sol: "Luz radiante",
+    lluvia: "Día de lluvia",
+    frio: "Frío cortante",
+    viento: "Rachas de viento",
+    alerta: "Alerta activa",
+    neutral: "Directa & práctica"
+  };
+
+  const currentMood = (resultado.mood || "neutral").toLowerCase();
+
+  if (kumoHeadline) kumoHeadline.textContent = resultado.titular || `${coordsActuales.city} a ${resultado.temp}`;
+  if (kumoMoodBadge) kumoMoodBadge.textContent = moodEmojis[currentMood] || "✨";
+  if (kumoMoodTag) kumoMoodTag.textContent = moodLabels[currentMood] || "Directa & práctica";
+
+  alertText.textContent = resultado.mensaje || resultado.consejo || "Día estable.";
   itemsList.innerHTML = resultado.items.map(i => `<span class="pill">${i}</span>`).join("");
   paletteContainer.innerHTML = resultado.paleta.map(hex => 
     `<div class="swatch" style="background:${hex};">${hex}</div>`
@@ -855,7 +915,7 @@ function obtenerMetricasClimaNotificacion() {
 async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
   const LocalNotifications = window.Capacitor?.Plugins?.LocalNotifications;
   const weatherInfo = obtenerMetricasClimaNotificacion();
-  const tituloNotificacion = `${weatherInfo.icono} SkyBrief • ${weatherInfo.tag} (${tempTexto})`;
+  const tituloNotificacion = `${weatherInfo.icono} Kumo • ${weatherInfo.tag} (${tempTexto})`;
 
   if (LocalNotifications) {
     const permiso = await LocalNotifications.requestPermissions();
