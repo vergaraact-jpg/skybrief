@@ -18,13 +18,8 @@ jobs:
         with:
           node-version: 20
 
-      - name: Instalar dependencias
-        run: npm install web-push @google/generative-ai
-
       - name: Ejecutar script de notificación
         run: node notify.js
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
-          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
-          WEB_PUSH_SUBSCRIPTION: ${{ secrets.WEB_PUSH_SUBSCRIPTION }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}

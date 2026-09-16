@@ -1,42 +1,111 @@
-const webpush = require("web-push");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const NTFY_TOPIC = process.env.NTFY_TOPIC;
 
-const vapidKeys = {
-  publicKey: process.env.VAPID_PUBLIC_KEY,
-  privateKey: process.env.VAPID_PRIVATE_KEY
-};
+// Madrid
+const LAT = 40.4168;
+const LON = -3.7038;
 
-webpush.setVapidDetails(
-  "mailto:tu-email@ejemplo.com",
-  vapidKeys.publicKey,
-  vapidKeys.privateKey
-);
+// Modelos admitidos para reintento secuencial
+const CANDIDATE_MODELS = [
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-3.6-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-1.5-pro",
+  "gemini-pro"
+];
 
-async function run() {
-  // 1. Obtener clima
-  const weatherRes = await fetch("https://api.open-meteo.com/v1/forecast?latitude=40.4168&longitude=-3.7038&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max&current_weather=true&timezone=auto");
-  const weatherData = await weatherRes.json();
+async function callGemini(prompt) {
+  let lastErr = null;
+  for (const model of CANDIDATE_MODELS) {
+    try {
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+      const gRes = await fetch(geminiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
 
-  // 2. Generar consejo con Gemini
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      if (gRes.status === 404) {
+        continue; // Probar siguiente modelo
+      }
 
-  const prompt = `Analiza: Temp actual ${weatherData.current_weather.temperature}°C, Máx ${weatherData.daily.temperature_2m_max[0]}°C, Lluvia ${weatherData.daily.precipitation_probability_max[0]}%. 
-Devuelve una sola frase de máximo 70 caracteres con qué ponerse o llevar hoy.`;
+      if (!gRes.ok) {
+        const errText = await gRes.text();
+        throw new Error(`HTTP ${gRes.status}: ${errText}`);
+      }
 
-  const result = await model.generateContent(prompt);
-  const consejo = result.response.text().trim();
-
-  // 3. Enviar Push nativo a tu móvil
-  const pushSubscription = JSON.parse(process.env.WEB_PUSH_SUBSCRIPTION);
-
-  const payload = JSON.stringify({
-    title: `SkyBrief • ${weatherData.current_weather.temperature}°C`,
-    body: consejo
-  });
-
-  await webpush.sendNotification(pushSubscription, payload);
-  console.log("Notificación push nativa enviada con éxito.");
+      const gData = await gRes.json();
+      if (gData.candidates && gData.candidates[0]?.content?.parts?.[0]?.text) {
+        return gData.candidates[0].content.parts[0].text.trim();
+      }
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("No se pudo obtener respuesta de ningún modelo de Gemini");
 }
 
-run().catch(console.error);
+async function run() {
+  if (!GEMINI_API_KEY) throw new Error("Falta GEMINI_API_KEY");
+  if (!NTFY_TOPIC) throw new Error("Falta NTFY_TOPIC");
+
+  // 1. Obtener métricas ampliadas de Open-Meteo
+  const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max&current_weather=true&timezone=auto`;
+  const wRes = await fetch(weatherUrl);
+  if (!wRes.ok) throw new Error(`Fallo Open-Meteo: ${wRes.status}`);
+  const wData = await wRes.json();
+
+  const tempActual = Math.round(wData.current_weather.temperature);
+  const tempMin = Math.round(wData.daily.temperature_2m_min[0]);
+  const lluviaProb = wData.daily.precipitation_probability_max[0];
+  const vientoMax = Math.round(wData.daily.windspeed_10m_max[0]);
+  const weatherCode = wData.current_weather.weathercode;
+
+  // 2. Prompt enfocado en Clima general + Módulo Coche/Tráfico
+  const prompt = `Actúa como asesor meteorológico y vial para Madrid.
+Datos de hoy:
+- Temperatura actual: ${tempActual}°C (Mín: ${tempMin}°C)
+- Probabilidad de lluvia: ${lluviaProb}%
+- Viento máx: ${vientoMax} km/h
+- Código WMO: ${weatherCode}
+
+Devuelve EXACTAMENTE dos líneas cortas (máximo 120 caracteres en total):
+Línea 1: Ropa recomendada y sensación térmica.
+Línea 2: [Coche & Vía]: Estado del vehículo (parabrisas/hielo si hace frío) y recomendación de conducción (adherencia, visibilidad o viento).`;
+
+  let mensaje;
+  try {
+    mensaje = await callGemini(prompt);
+  } catch (err) {
+    console.warn("Fallo en Gemini, generando mensaje nativo de respaldo:", err.message);
+    const ropa = tempActual > 22 ? "Ropa fresca y ligera." : tempActual < 12 ? "Abrigo y chaqueta cortavientos." : "Ropa de entretiempo.";
+    const via = lluviaProb > 40 ? "[Coche & Vía]: Calzada húmeda, aumenta distancia de frenado." : tempMin <= 3 ? "[Coche & Vía]: Revisa escarcha en lunas y batería." : "[Coche & Vía]: Asfalto seco y buena adherencia.";
+    mensaje = `${ropa}\n${via}`;
+  }
+
+  // 3. Selección de tag para ntfy según condiciones
+  let tag = "partly_sunny";
+  if (lluviaProb > 40) tag = "umbrella,warning";
+  else if (tempMin <= 3) tag = "snowflake,car";
+  else if (vientoMax > 40) tag = "wind_blowing_face,warning";
+
+  // 4. Envío a ntfy
+  const pushRes = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+    method: "POST",
+    body: mensaje,
+    headers: {
+      "Title": `Madrid ${tempActual}°C - Clima y Estado Vial`,
+      "Priority": lluviaProb > 60 || tempMin <= 2 ? "high" : "default",
+      "Tags": tag
+    }
+  });
+
+  if (!pushRes.ok) throw new Error(`Fallo ntfy: ${pushRes.status}`);
+  console.log("Notificación enviada con éxito a ntfy.sh/" + NTFY_TOPIC + ":\n", mensaje);
+}
+
+run().catch(err => {
+  console.error("Error:", err.message);
+  process.exit(1);
+});
