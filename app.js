@@ -58,6 +58,24 @@ if (localStorage.getItem("gemini_key")) {
   keyStatus.style.color = "#38bdf8";
 }
 
+// Gestión de Temas Visuales
+const themeSelect = document.getElementById("theme-select");
+
+function aplicarTema(tema) {
+  document.documentElement.setAttribute("data-theme", tema);
+  localStorage.setItem("skybrief_theme", tema);
+  if (themeSelect) themeSelect.value = tema;
+}
+
+const temaGuardado = localStorage.getItem("skybrief_theme") || "dark";
+aplicarTema(temaGuardado);
+
+if (themeSelect) {
+  themeSelect.addEventListener("change", (e) => {
+    aplicarTema(e.target.value);
+  });
+}
+
 // ==========================================
 // 1. SELECTOR DE TRANSPORTE
 // ==========================================
