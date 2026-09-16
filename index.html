@@ -48,6 +48,27 @@
         <small id="transport-mode-label" class="sub-advice">Modo transporte: a pie / metro</small>
       </section>
 
+      <!-- Panel de Asistente Vial y Estado del Vehículo (Modo Coche/Moto) -->
+      <section id="car-assistant-card" class="car-assistant-card" style="display: none;">
+        <div class="car-card-header">
+          <div class="car-header-left">
+            <span class="car-icon">🚗</span>
+            <strong>ASISTENTE VIAL & VEHÍCULO</strong>
+          </div>
+          <span id="car-risk-badge" class="risk-badge risk-low">Precaución baja</span>
+        </div>
+        <div class="car-card-body">
+          <div class="car-info-row">
+            <span class="car-label">🔧 Estado del Vehículo:</span>
+            <p id="car-vehicle-alert" class="car-text">Verificando condiciones...</p>
+          </div>
+          <div class="car-info-row">
+            <span class="car-label">🛣️ Conducción & Calzada:</span>
+            <p id="car-driving-advice" class="car-text">Calculando adherencia y visibilidad...</p>
+          </div>
+        </div>
+      </section>
+
       <!-- Fila de Métricas Rápidas -->
       <div class="metrics-grid">
         <div class="metric-col">
