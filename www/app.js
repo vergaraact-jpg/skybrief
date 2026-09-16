@@ -701,6 +701,8 @@ async function iniciarApp() {
 
   try {
     datosMeteorologicos = await getWeatherData(coordsActuales.lat, coordsActuales.lon);
+    // Tras procesar open-meteo:
+    verificarAlertasCriticas(datosMeteorologicos.clima);
     await procesarReporteCompleto();
   } catch (err) {
     console.error("Error al conectar con los servicios de clima:", err);
