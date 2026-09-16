@@ -1,3 +1,30 @@
+:root, [data-theme="dark"] {
+  --bg-primary: #0f172a;
+  --bg-surface: #1e293b;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --accent: #38bdf8;
+  --border: #334155;
+}
+
+[data-theme="light"] {
+  --bg-primary: #f1f5f9;
+  --bg-surface: #ffffff;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --accent: #0284c7;
+  --border: #e2e8f0;
+}
+
+[data-theme="warm"] {
+  --bg-primary: #1c1917;
+  --bg-surface: #292524;
+  --text-main: #fafaf9;
+  --text-muted: #a8a29e;
+  --accent: #f97316;
+  --border: #44403c;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -6,13 +33,14 @@
 }
 
 body {
-  background-color: #080d1a;
-  color: #f8fafc;
+  background-color: var(--bg-primary, #080d1a);
+  color: var(--text-main, #f8fafc);
   display: flex;
   justify-content: center;
   align-items: flex-start;
   min-height: 100vh;
   padding: 1rem 0.5rem;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .app-container {
@@ -83,14 +111,15 @@ body {
 
 /* Tarjeta Principal */
 .app-card {
-  background: #0d1424;
-  border: 1px solid #1e293b;
+  background: var(--bg-surface, #0d1424);
+  border: 1px solid var(--border, #1e293b);
   border-radius: 24px;
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
   box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
+  transition: background 0.3s ease, border-color 0.3s ease;
 }
 
 .header-top { display: flex; justify-content: space-between; align-items: center; }
