@@ -645,13 +645,13 @@ async function procesarReporteCompleto() {
   ).join("");
 
   // Manejo de la Tarjeta de Predicción Intradía (solo si el cambio es significativo)
+  const cambio = analizarCambioIntradia(clima.hourly, schedule);
   const intradayCard = document.getElementById("intraday-card");
   const intradayText = document.getElementById("intraday-text");
-  const intradiaAnalisis = clima.hourly ? analizarCambioIntradia(clima.hourly, schedule) : { aviso: null };
 
   if (intradayCard && intradayText) {
-    if (intradiaAnalisis.aviso) {
-      intradayText.textContent = intradiaAnalisis.aviso;
+    if (cambio && cambio.aviso) {
+      intradayText.textContent = cambio.aviso;
       intradayCard.classList.remove("hidden");
     } else {
       intradayCard.classList.add("hidden");
