@@ -644,6 +644,20 @@ async function procesarReporteCompleto() {
     `<div class="swatch" style="background:${hex};">${hex}</div>`
   ).join("");
 
+  // Manejo de la Tarjeta de Predicción Intradía (solo si el cambio es significativo)
+  const intradayCard = document.getElementById("intraday-card");
+  const intradayText = document.getElementById("intraday-text");
+  const intradiaAnalisis = clima.hourly ? analizarCambioIntradia(clima.hourly, schedule) : { aviso: null };
+
+  if (intradayCard && intradayText) {
+    if (intradiaAnalisis.aviso) {
+      intradayText.textContent = intradiaAnalisis.aviso;
+      intradayCard.classList.remove("hidden");
+    } else {
+      intradayCard.classList.add("hidden");
+    }
+  }
+
   // Manejo de la Tarjeta de Conducción / Coche si modoTransporte === "coche"
   const carCard = document.getElementById("car-module-card") || document.getElementById("car-assistant-card");
   const carVehicleStatus = document.getElementById("car-vehicle-status") || document.getElementById("car-vehicle-alert");
