@@ -114,25 +114,43 @@ Línea 2: [Coche & Vía]: Estado del vehículo (parabrisas/hielo si hace frío) 
     mensaje = `${ropa}\n${via}`;
   }
 
-  // 3. Selección de tag para ntfy según condiciones
-  let tag = "partly_sunny";
-  if (lluviaProb > 40) tag = "umbrella,warning";
-  else if (tempMin <= 3) tag = "snowflake,car";
-  else if (vientoMax > 40) tag = "wind_blowing_face,warning";
+  // 3. Selección de condición climática visual (Sol, Lluvia, Frío, Calor)
+  let tag = "sunny,sun_with_face";
+  let iconoClima = "☀️";
+  let tituloClima = "Soleado";
+  let iconUrl = "https://raw.githubusercontent.com/vergaraact-jpg/skybrief/main/icons/weather-sun.png";
 
-  // 4. Envío a ntfy
+  if (lluviaProb >= 40 || (weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 99)) {
+    tag = "rain_cloud,umbrella,droplet";
+    iconoClima = "🌧️";
+    tituloClima = "Lluvia prevista";
+    iconUrl = "https://raw.githubusercontent.com/vergaraact-jpg/skybrief/main/icons/weather-rain.png";
+  } else if (tempMin <= 4 || tempActual <= 5) {
+    tag = "snowflake,cold_face,ice_cube";
+    iconoClima = "❄️";
+    tituloClima = "Frío Intenso";
+    iconUrl = "https://raw.githubusercontent.com/vergaraact-jpg/skybrief/main/icons/weather-cold.png";
+  } else if (tempActual >= 28 || (wData.daily?.temperature_2m_max?.[0] >= 30)) {
+    tag = "hot_face,fire,sun";
+    iconoClima = "🔥";
+    tituloClima = "Calor Intenso";
+    iconUrl = "https://raw.githubusercontent.com/vergaraact-jpg/skybrief/main/icons/weather-heat.png";
+  }
+
+  // 4. Envío a ntfy con Icono e Imagen adjunta
   const pushRes = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
     method: "POST",
-    body: mensaje,
+    body: `${iconoClima} ${mensaje}`,
     headers: {
-      "Title": `Madrid ${tempActual}°C - Clima y Estado Vial`,
+      "Title": `${iconoClima} Madrid ${tempActual}°C • ${tituloClima}`,
       "Priority": lluviaProb > 60 || tempMin <= 2 ? "high" : "default",
-      "Tags": tag
+      "Tags": tag,
+      "Icon": iconUrl
     }
   });
 
   if (!pushRes.ok) throw new Error(`Fallo ntfy: ${pushRes.status}`);
-  console.log("Notificación enviada con éxito a ntfy.sh/" + NTFY_TOPIC + ":\n", mensaje);
+  console.log("Notificación enviada con éxito a ntfy.sh/" + NTFY_TOPIC + " [" + tituloClima + "]:\n", mensaje);
 }
 
 run().catch(err => {

@@ -824,8 +824,38 @@ if (localStorage.getItem("notify_time")) {
   notifyStatus.textContent = `Aviso programado a las ${notifyTimeInput.value}`;
 }
 
+// Obtener estado visual del clima para la notificación (Sol, Lluvia, Frío, Calor)
+function obtenerMetricasClimaNotificacion() {
+  if (!datosMeteorologicos || !datosMeteorologicos.clima) {
+    return { condicion: "sol", icono: "☀️", color: "#f59e0b", tag: "Soleado", iconFile: "icons/weather-sun.png" };
+  }
+  const { clima } = datosMeteorologicos;
+  const tempActual = Math.round(clima.current?.temperature_2m ?? clima.current_weather?.temperature ?? 20);
+  const tempMin = Math.round(clima.daily?.temperature_2m_min?.[0] ?? tempActual);
+  const tempMax = Math.round(clima.daily?.temperature_2m_max?.[0] ?? tempActual);
+  const lluviaProb = clima.daily?.precipitation_probability_max?.[0] ?? 0;
+  const weatherCode = clima.current?.weather_code ?? clima.current_weather?.weathercode ?? 0;
+
+  // Lluvia / precipitaciones
+  if (lluviaProb >= 40 || (weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 99)) {
+    return { condicion: "lluvia", icono: "🌧️", color: "#38bdf8", tag: "Lluvia", iconFile: "icons/weather-rain.png" };
+  }
+  // Frío / helada
+  if (tempMin <= 4 || tempActual <= 5) {
+    return { condicion: "frio", icono: "❄️", color: "#60a5fa", tag: "Frío", iconFile: "icons/weather-cold.png" };
+  }
+  // Calor
+  if (tempMax >= 30 || tempActual >= 28) {
+    return { condicion: "calor", icono: "🔥", color: "#ef4444", tag: "Calor Intenso", iconFile: "icons/weather-heat.png" };
+  }
+  // Sol / tiempo despejado
+  return { condicion: "sol", icono: "☀️", color: "#f59e0b", tag: "Soleado", iconFile: "icons/weather-sun.png" };
+}
+
 async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
   const LocalNotifications = window.Capacitor?.Plugins?.LocalNotifications;
+  const weatherInfo = obtenerMetricasClimaNotificacion();
+  const tituloNotificacion = `${weatherInfo.icono} SkyBrief • ${weatherInfo.tag} (${tempTexto})`;
 
   if (LocalNotifications) {
     const permiso = await LocalNotifications.requestPermissions();
@@ -850,8 +880,8 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
       notifications: [
         {
           id: 101,
-          title: `SkyBrief • ${tempTexto}`,
-          body: textoConsejo || "Consulta tu recomendación de vestimenta y movilidad para hoy.",
+          title: tituloNotificacion,
+          body: `${weatherInfo.icono} ${textoConsejo || "Consulta tu recomendación de vestimenta y movilidad para hoy."}`,
           schedule: { 
             at: fechaDisparo,
             repeats: true,
@@ -859,6 +889,7 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
             allowWhileIdle: true
           },
           sound: "beep.wav",
+          iconColor: weatherInfo.color,
           smallIcon: "ic_stat_name"
         }
       ]
@@ -868,8 +899,8 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
     notifBadge.textContent = "Activo";
     notifBadge.style.background = "#065f46";
     notifBadge.style.color = "#6ee7b7";
-    notifyStatus.textContent = `Aviso diario programado a las ${horaString}`;
-    alert(`Aviso programado con éxito todos los días a las ${horaString}.`);
+    notifyStatus.textContent = `${weatherInfo.icono} Aviso diario programado a las ${horaString}`;
+    alert(`Aviso (${weatherInfo.tag}) programado con éxito todos los días a las ${horaString}.`);
     return;
   }
 
@@ -881,7 +912,7 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
       notifBadge.textContent = "Activo";
       notifBadge.style.background = "#065f46";
       notifBadge.style.color = "#6ee7b7";
-      notifyStatus.textContent = `Aviso diario activado para las ${horaString}`;
+      notifyStatus.textContent = `${weatherInfo.icono} Aviso diario activado para las ${horaString}`;
       alert(`Aviso web programado a las ${horaString}.`);
     } else {
       alert("Debes conceder permisos de notificación en Android para recibir el aviso.");
