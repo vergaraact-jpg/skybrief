@@ -31,9 +31,9 @@ const cityTitle = document.getElementById("city-title");
 const tempDisplay = document.getElementById("temp-display");
 const alertText = document.getElementById("alert-text");
 const transportLabel = document.getElementById("transport-mode-label");
-const windDisplay = document.getElementById("wind-display");
-const uvDisplay = document.getElementById("uv-display");
-const rainDisplay = document.getElementById("rain-display");
+const windDisplay = document.getElementById("wind-display") || document.getElementById("wind-metric");
+const uvDisplay = document.getElementById("uv-display") || document.getElementById("uv-metric");
+const rainDisplay = document.getElementById("rain-display") || document.getElementById("rain-metric");
 const itemsList = document.getElementById("items-list");
 const paletteContainer = document.getElementById("palette-container");
 const airText = document.getElementById("air-text");
@@ -98,33 +98,47 @@ btnRefresh.addEventListener("click", () => {
 // ==========================================
 async function obtenerUbicacion() {
   return new Promise((resolve) => {
-    if (!navigator.geolocation) return resolve(DEFAULT_COORDS);
+    if (!navigator.geolocation) return resolve({ ...DEFAULT_COORDS });
+
+    const timer = setTimeout(() => {
+      resolve({ ...DEFAULT_COORDS });
+    }, 2500);
+
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
+        clearTimeout(timer);
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
         let city = "Tu Ubicación";
         try {
           const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
           const data = await res.json();
-          city = data.address.city || data.address.town || data.address.suburb || "Tu Ubicación";
+          city = data.address.city || data.address.town || data.address.village || data.address.suburb || "Tu Ubicación";
         } catch (e) {
           console.warn("Geocodificación inversa fallida:", e);
         }
         resolve({ lat, lon, city });
       },
-      () => resolve(DEFAULT_COORDS),
-      { timeout: 4000 }
+      (err) => {
+        clearTimeout(timer);
+        console.warn("Geolocalización denegada o timeout, usando Madrid:", err);
+        resolve({ ...DEFAULT_COORDS });
+      },
+      { timeout: 2500, enableHighAccuracy: false, maximumAge: 60000 }
     );
   });
 }
 
-async function obtenerClimaYCalidad(lat, lon) {
-  const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max&current_weather=true&timezone=auto`;
+// Endpoint actualizado con current=temperature_2m,relative_humidity_2m,wind_speed_10m
+async function getWeatherData(lat = 40.4168, lon = -3.7038) {
+  const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,is_day,precipitation,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max&timezone=auto`;
   const airUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5`;
 
   const [resClima, resAire] = await Promise.all([
-    fetch(weatherUrl).then(r => r.json()),
+    fetch(weatherUrl).then(r => {
+      if (!r.ok) throw new Error(`Error Open-Meteo: ${r.status}`);
+      return r.json();
+    }),
     fetch(airUrl).then(r => r.json()).catch(() => null)
   ]);
 
@@ -151,10 +165,10 @@ function inicializarMapa(lat, lon) {
 // 4. MOTORES DE ANÁLISIS (HÍBRIDO)
 // ==========================================
 function motorNativo(clima, transporte) {
-  const temp = Math.round(clima.current_weather.temperature);
-  const probLluvia = clima.daily.precipitation_probability_max[0];
-  const viento = Math.round(clima.current_weather.windspeed);
-  const uv = clima.daily.uv_index_max[0];
+  const temp = Math.round(clima.current?.temperature_2m ?? clima.current_weather?.temperature ?? 20);
+  const probLluvia = clima.daily?.precipitation_probability_max?.[0] ?? 0;
+  const viento = Math.round(clima.current?.wind_speed_10m ?? clima.current_weather?.windspeed ?? 10);
+  const uv = clima.daily?.uv_index_max?.[0] ?? 0;
 
   let items = [];
   let consejo = "Tiempo agradable. Ropa cómoda y ligera.";
@@ -229,10 +243,8 @@ async function discoverAvailableModels(apiKey) {
     console.warn("No se pudo consultar el catálogo /models:", e);
   }
 
-  // Lista combinada (los devueltos por la API de Google + lista conocida de respaldo)
   const fullList = [...new Set([...apiModels, ...EXPANDED_KNOWN_MODELS])];
 
-  // Ordenar inteligentemente: flash > thinking > pro > otros
   fullList.sort((a, b) => {
     const score = (name) => {
       let s = 0;
@@ -250,11 +262,7 @@ async function discoverAvailableModels(apiKey) {
 // BÚSQUEDA SECUENCIAL AUTO-DESCARTABLE UNIVERSAL
 async function callGeminiAutoDetect(apiKey, promptText) {
   const cleanKey = apiKey.trim();
-
-  // Si ya hay un modelo guardado funcional, ponlo el primero
   const cached = localStorage.getItem("gemini_active_model");
-  
-  // Obtener catálogo completo de modelos para esta clave
   const availableModels = await discoverAvailableModels(cleanKey);
   
   const queue = cached 
@@ -275,7 +283,6 @@ async function callGeminiAutoDetect(apiKey, promptText) {
         })
       });
 
-      // Si el modelo no está disponible (404), descártalo y prueba el siguiente inmediatamente
       if (response.status === 404) {
         console.warn(`[Auto-Detect] Modelo '${model}' 404, probando siguiente...`);
         localStorage.removeItem("gemini_active_model");
@@ -284,7 +291,6 @@ async function callGeminiAutoDetect(apiKey, promptText) {
 
       const result = await response.json().catch(() => ({}));
 
-      // Si hay error en la respuesta de Google
       if (!response.ok) {
         const errorMsg = (result.error?.message || "").toLowerCase();
         if (errorMsg.includes("not found") || errorMsg.includes("not supported") || errorMsg.includes("404")) {
@@ -302,7 +308,6 @@ async function callGeminiAutoDetect(apiKey, promptText) {
         continue;
       }
 
-      // ¡ÉXITO! Encontramos el modelo que sí funciona en tu cuenta
       localStorage.setItem("gemini_active_model", model);
       console.log(`[Auto-Detect] ✓ Modelo activo fijado con éxito: ${model}`);
       return { text: result.candidates[0].content.parts[0].text, model };
@@ -320,16 +325,23 @@ async function callGeminiAutoDetect(apiKey, promptText) {
 }
 
 async function motorGemini(clima, transporte, city, apiKey) {
+  const temp = Math.round(clima.current?.temperature_2m ?? clima.current_weather?.temperature ?? 20);
+  const maxTemp = clima.daily?.temperature_2m_max?.[0] ?? temp;
+  const minTemp = clima.daily?.temperature_2m_min?.[0] ?? temp;
+  const probLluvia = clima.daily?.precipitation_probability_max?.[0] ?? 0;
+  const uv = clima.daily?.uv_index_max?.[0] ?? 0;
+  const viento = Math.round(clima.current?.wind_speed_10m ?? clima.current_weather?.windspeed ?? 10);
+
   const prompt = `Analiza estos datos meteorológicos de ${city}:
-- Temp actual: ${clima.current_weather.temperature}°C (Máx: ${clima.daily.temperature_2m_max[0]}°C, Mín: ${clima.daily.temperature_2m_min[0]}°C)
-- Prob. lluvia: ${clima.daily.precipitation_probability_max[0]}%
-- UV: ${clima.daily.uv_index_max[0]}
-- Viento: ${clima.current_weather.windspeed} km/h
+- Temp actual: ${temp}°C (Máx: ${maxTemp}°C, Mín: ${minTemp}°C)
+- Prob. lluvia: ${probLluvia}%
+- UV: ${uv}
+- Viento: ${viento} km/h
 - Modo de transporte elegido por el usuario: ${transporte}
 
 Responde exclusivamente con un JSON válido con este formato:
 {
-  "temp": "${Math.round(clima.current_weather.temperature)}°C",
+  "temp": "${temp}°C",
   "consejo": "Consejo directo de ropa y trayecto en ${transporte} (máx 15 palabras)",
   "items": ["Prenda 1", "Accesorio 2", "Accesorio 3"],
   "paleta": ["#HEX1", "#HEX2", "#HEX3"]
@@ -339,7 +351,7 @@ Responde exclusivamente con un JSON válido con este formato:
   const cleanJson = extractJsonFromText(raw);
   
   return {
-    temp: cleanJson.temp || `${Math.round(clima.current_weather.temperature)}°C`,
+    temp: cleanJson.temp || `${temp}°C`,
     consejo: cleanJson.consejo || cleanJson.advice || "Día estable.",
     items: cleanJson.items || cleanJson.que_llevar || cleanJson.queLlevar || ["Ropa cómoda"],
     paleta: cleanJson.paleta || cleanJson.paleta_luz || cleanJson.palette || ["#38BDF8", "#94A3B8", "#0F172A"],
@@ -366,10 +378,24 @@ async function procesarReporteCompleto() {
     }
   }
 
-  // Métricas
-  windDisplay.textContent = `${Math.round(clima.current_weather.windspeed)} km/h`;
-  uvDisplay.textContent = clima.daily.uv_index_max[0];
-  rainDisplay.textContent = `${clima.daily.precipitation_probability_max[0]}%`;
+  // Extraer valores meteorológicos reales de Open-Meteo
+  const currentTemp = Math.round(clima.current?.temperature_2m ?? clima.current_weather?.temperature ?? 20);
+  const windSpeed = Math.round(clima.current?.wind_speed_10m ?? clima.current_weather?.windspeed ?? 10);
+  const rainProb = clima.daily?.precipitation_probability_max?.[0] ?? 0;
+  const uvMax = clima.daily?.uv_index_max?.[0] ?? 0;
+
+  // Pintar métricas en interfaz
+  const windElem = document.getElementById("wind-display") || document.getElementById("wind-metric");
+  if (windElem) windElem.textContent = `${windSpeed} km/h`;
+
+  const uvElem = document.getElementById("uv-display") || document.getElementById("uv-metric");
+  if (uvElem) uvElem.textContent = uvMax;
+
+  const rainElem = document.getElementById("rain-display") || document.getElementById("rain-metric");
+  if (rainElem) rainElem.textContent = `${rainProb}%`;
+
+  const tempElem = document.getElementById("temp-display");
+  if (tempElem) tempElem.textContent = `${currentTemp}°C`;
 
   let resultado;
 
@@ -396,7 +422,7 @@ async function procesarReporteCompleto() {
   }
 
   // Pintar en pantalla
-  tempDisplay.textContent = resultado.temp;
+  if (tempElem) tempElem.textContent = resultado.temp;
   alertText.textContent = resultado.consejo;
   itemsList.innerHTML = resultado.items.map(i => `<span class="pill">${i}</span>`).join("");
   paletteContainer.innerHTML = resultado.paleta.map(hex => 
@@ -412,9 +438,10 @@ async function iniciarApp() {
   inicializarMapa(coordsActuales.lat, coordsActuales.lon);
 
   try {
-    datosMeteorologicos = await obtenerClimaYCalidad(coordsActuales.lat, coordsActuales.lon);
+    datosMeteorologicos = await getWeatherData(coordsActuales.lat, coordsActuales.lon);
     await procesarReporteCompleto();
   } catch (err) {
+    console.error("Error al conectar con los servicios de clima:", err);
     alertText.textContent = "Error al conectar con los servicios de clima.";
   }
 }
