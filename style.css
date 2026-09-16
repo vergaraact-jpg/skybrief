@@ -210,3 +210,52 @@ h1 { font-size: 1.9rem; font-weight: 700; margin-top: 0.2rem; }
   background: #334155;
 }
 
+/* Configuración Horaria de Briefings */
+.schedule-settings-card {
+  background: #111a2f;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.schedule-settings-card h3 {
+  font-size: 0.85rem;
+  color: #f8fafc;
+  margin: 0;
+}
+
+.text-sm {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  line-height: 1.35;
+}
+
+.time-inputs-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.time-inputs-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: #cbd5e1;
+  font-weight: 600;
+}
+
+.time-inputs-grid input[type="time"] {
+  background: #090d18;
+  border: 1px solid #1e293b;
+  color: #fff;
+  padding: 0.45rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  width: 100%;
+}
+
+

@@ -566,3 +566,44 @@ if (btnSetAlert) {
   });
 }
 
+// ==========================================
+// 7. CONFIGURACIÓN HORARIA DEL BRIEFING (MAÑANA, TARDE, NOCHE)
+// ==========================================
+const timeMorningInput = document.getElementById("time-morning");
+const timeAfternoonInput = document.getElementById("time-afternoon");
+const timeNightInput = document.getElementById("time-night");
+const btnSaveSchedule = document.getElementById("btn-save-schedule");
+const scheduleStatus = document.getElementById("schedule-status");
+
+function cargarHorariosConfigurados() {
+  const defaults = { morning: "09:00", afternoon: "15:00", night: "21:00" };
+  const guardado = JSON.parse(localStorage.getItem("skybrief_schedule") || "null") || defaults;
+
+  if (timeMorningInput) timeMorningInput.value = guardado.morning || defaults.morning;
+  if (timeAfternoonInput) timeAfternoonInput.value = guardado.afternoon || defaults.afternoon;
+  if (timeNightInput) timeNightInput.value = guardado.night || defaults.night;
+}
+
+cargarHorariosConfigurados();
+
+if (btnSaveSchedule) {
+  btnSaveSchedule.addEventListener("click", () => {
+    const preferencias = {
+      morning: timeMorningInput?.value || "09:00",
+      afternoon: timeAfternoonInput?.value || "15:00",
+      night: timeNightInput?.value || "21:00"
+    };
+
+    localStorage.setItem("skybrief_schedule", JSON.stringify(preferencias));
+    
+    if (scheduleStatus) {
+      scheduleStatus.textContent = "✓ Preferencias horarias guardadas.";
+      scheduleStatus.style.color = "#38bdf8";
+      setTimeout(() => {
+        scheduleStatus.textContent = "";
+      }, 3000);
+    }
+  });
+}
+
+

@@ -92,6 +92,30 @@
         <p id="notify-status" class="subtext-status"></p>
       </section>
 
+      <!-- Modal o Sección de Configuración Horaria -->
+      <section class="section schedule-settings-card">
+        <h3>⏰ Horarios del Briefing</h3>
+        <p class="text-sm">Personaliza las horas de referencia para tu reporte diario:</p>
+        
+        <div class="time-inputs-grid">
+          <label>
+            <span>🌅 Mañana</span>
+            <input type="time" id="time-morning" value="09:00">
+          </label>
+          <label>
+            <span>☀️ Tarde</span>
+            <input type="time" id="time-afternoon" value="15:00">
+          </label>
+          <label>
+            <span>🌙 Noche</span>
+            <input type="time" id="time-night" value="21:00">
+          </label>
+        </div>
+        
+        <button id="btn-save-schedule" type="button" class="btn-secondary">Guardar preferencias</button>
+        <p id="schedule-status" class="subtext-status"></p>
+      </section>
+
       <!-- Activación de Modo Pro con Gemini -->
       <section class="pro-card">
         <div class="pro-header">
