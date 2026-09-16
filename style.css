@@ -258,15 +258,15 @@ h1 { font-size: 1.9rem; font-weight: 700; margin-top: 0.2rem; }
   width: 100%;
 }
 
-/* Asistente Vial y Vehículo */
-.car-assistant-card {
+/* Tarjeta de Modo Conducción / Coche */
+.car-card {
   background: #101b33;
   border: 1px solid #1e3a8a;
   border-radius: 14px;
   padding: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.55rem;
   animation: fadeInCar 0.3s ease-in-out;
 }
 
@@ -275,71 +275,67 @@ h1 { font-size: 1.9rem; font-weight: 700; margin-top: 0.2rem; }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.car-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.car-header-left {
+.car-header {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.75rem;
-  color: #60a5fa;
-  letter-spacing: 0.05em;
+  gap: 0.5rem;
 }
 
-.risk-badge {
+.car-header strong {
+  flex: 1;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  color: #f1f5f9;
+}
+
+.car-icon {
+  font-size: 1.15rem;
+}
+
+.car-card .badge {
   font-size: 0.65rem;
   font-weight: 700;
   padding: 0.2rem 0.55rem;
-  border-radius: 20px;
+  border-radius: 12px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
+  background: #0284c7;
+  color: #fff;
 }
 
-.risk-low {
+.car-card .badge.badge-low {
   background: #064e3b;
   color: #6ee7b7;
   border: 1px solid #059669;
 }
 
-.risk-med {
+.car-card .badge.badge-med {
   background: #451a03;
   color: #fde047;
   border: 1px solid #d97706;
 }
 
-.risk-high {
+.car-card .badge.badge-high {
   background: #450a0a;
   color: #fca5a5;
   border: 1px solid #dc2626;
 }
 
-.car-card-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.car-info-row {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
-.car-label {
-  font-size: 0.7rem;
-  color: #94a3b8;
-  font-weight: 600;
-}
-
 .car-text {
-  font-size: 0.82rem;
-  color: #f1f5f9;
+  font-size: 0.83rem;
+  color: #e2e8f0;
+  font-weight: 500;
   line-height: 1.35;
+  margin: 0;
 }
+
+.car-subtext {
+  font-size: 0.77rem;
+  color: #94a3b8;
+  line-height: 1.35;
+  margin: 0;
+}
+
 
 
 

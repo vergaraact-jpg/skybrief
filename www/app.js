@@ -598,22 +598,22 @@ async function procesarReporteCompleto() {
     `<div class="swatch" style="background:${hex};">${hex}</div>`
   ).join("");
 
-  // Manejo del Asistente Vial si modoTransporte === "coche"
-  const carCard = document.getElementById("car-assistant-card");
-  const carVehicleAlert = document.getElementById("car-vehicle-alert");
-  const carDrivingAdvice = document.getElementById("car-driving-advice");
-  const carRiskBadge = document.getElementById("car-risk-badge");
+  // Manejo de la Tarjeta de Conducción / Coche si modoTransporte === "coche"
+  const carCard = document.getElementById("car-module-card") || document.getElementById("car-assistant-card");
+  const carVehicleStatus = document.getElementById("car-vehicle-status") || document.getElementById("car-vehicle-alert");
+  const carDrivingStatus = document.getElementById("car-driving-status") || document.getElementById("car-driving-advice");
+  const carBadge = document.getElementById("car-badge") || document.getElementById("car-risk-badge");
 
   if (modoTransporte === "coche") {
     if (carCard) carCard.style.display = "flex";
     try {
       const consejoCoche = await generarConsejoCoche(clima, apiKey);
-      if (carVehicleAlert) carVehicleAlert.textContent = consejoCoche.alerta_coche;
-      if (carDrivingAdvice) carDrivingAdvice.textContent = consejoCoche.consejo_conduccion;
-      if (carRiskBadge) {
+      if (carVehicleStatus) carVehicleStatus.textContent = consejoCoche.alerta_coche;
+      if (carDrivingStatus) carDrivingStatus.textContent = consejoCoche.consejo_conduccion;
+      if (carBadge) {
         const nivel = (consejoCoche.precaucion_nivel || "bajo").toLowerCase();
-        carRiskBadge.className = `risk-badge risk-${nivel === "alto" ? "high" : nivel === "medio" ? "med" : "low"}`;
-        carRiskBadge.textContent = `Precaución ${nivel}`;
+        carBadge.className = `badge badge-${nivel === "alto" ? "high" : nivel === "medio" ? "med" : "low"}`;
+        carBadge.textContent = nivel === "alto" ? "Atención Alta" : nivel === "medio" ? "Precaución" : "Normal";
       }
     } catch (e) {
       console.warn("Error al renderizar consejo de coche:", e);
