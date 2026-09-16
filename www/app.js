@@ -58,23 +58,19 @@ if (localStorage.getItem("gemini_key")) {
   keyStatus.style.color = "#38bdf8";
 }
 
-// Gestión de Temas Visuales
 const themeSelect = document.getElementById("theme-select");
 
-function aplicarTema(tema) {
-  document.documentElement.setAttribute("data-theme", tema);
-  localStorage.setItem("skybrief_theme", tema);
-  if (themeSelect) themeSelect.value = tema;
-}
+// 1. Cargar tema previo o usar oscuro por defecto
+const temaGuardado = localStorage.getItem("app_theme") || "dark";
+document.documentElement.setAttribute("data-theme", temaGuardado);
+if (themeSelect) themeSelect.value = temaGuardado;
 
-const temaGuardado = localStorage.getItem("skybrief_theme") || "dark";
-aplicarTema(temaGuardado);
-
-if (themeSelect) {
-  themeSelect.addEventListener("change", (e) => {
-    aplicarTema(e.target.value);
-  });
-}
+// 2. Escuchar cambios de selección
+themeSelect?.addEventListener("change", (e) => {
+  const selectedTheme = e.target.value;
+  document.documentElement.setAttribute("data-theme", selectedTheme);
+  localStorage.setItem("app_theme", selectedTheme);
+});
 
 // ==========================================
 // 1. SELECTOR DE TRANSPORTE
