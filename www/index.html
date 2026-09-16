@@ -87,12 +87,58 @@
       <!-- Tarjeta en la interfaz (UI) Modo Conducción / Coche -->
       <div id="car-module-card" class="car-card" style="display: none;">
         <div class="car-header">
-          <span class="car-icon">🚗</span>
-          <strong>Estado para tu trayecto</strong>
-          <span id="car-badge" class="badge">Atención</span>
+          <div class="car-header-left">
+            <span class="car-icon">🚗</span>
+            <div class="car-header-titles">
+              <strong>COPILOTO VIAL & COCHE</strong>
+              <span class="car-subtitle">Diagnóstico de ruta y vehículo</span>
+            </div>
+          </div>
+          <span id="car-badge" class="badge">Favorable</span>
         </div>
-        <p id="car-vehicle-status" class="car-text">Cargando condiciones del vehículo...</p>
-        <p id="car-driving-status" class="car-subtext">Cargando recomendaciones viales...</p>
+
+        <!-- Tríada de Métricas Viales -->
+        <div class="car-metrics-grid">
+          <div class="car-metric-item">
+            <span class="car-metric-icon">🛣️</span>
+            <div class="car-metric-info">
+              <span class="car-metric-label">CALZADA</span>
+              <strong id="car-road-status">Asfalto Seco</strong>
+            </div>
+          </div>
+          <div class="car-metric-item">
+            <span class="car-metric-icon">👁️</span>
+            <div class="car-metric-info">
+              <span class="car-metric-label">VISIBILIDAD</span>
+              <strong id="car-visibility-status">Óptima</strong>
+            </div>
+          </div>
+          <div class="car-metric-item">
+            <span class="car-metric-icon">💨</span>
+            <div class="car-metric-info">
+              <span class="car-metric-label">VIENTO EN RUTA</span>
+              <strong id="car-wind-status">Calma</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Checklist del Vehículo -->
+        <div class="car-box car-vehicle-box">
+          <div class="car-box-header">
+            <span class="car-box-icon">🔧</span>
+            <span>ESTADO DEL VEHÍCULO</span>
+          </div>
+          <p id="car-vehicle-status" class="car-text">Cargando condiciones del vehículo...</p>
+        </div>
+
+        <!-- Consejo de Conducción Kumo -->
+        <div class="car-box car-driving-box">
+          <div class="car-box-header">
+            <span class="car-box-icon">💡</span>
+            <span>CONSEJO DE RUTA KUMO</span>
+          </div>
+          <p id="car-driving-status" class="car-subtext">Cargando recomendaciones viales...</p>
+        </div>
       </div>
 
       <!-- Fila de Métricas Rápidas -->

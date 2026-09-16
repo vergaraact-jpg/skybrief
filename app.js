@@ -535,45 +535,74 @@ Responde exclusivamente con el JSON estricto:`;
 function generarConsejoCocheNativo(weatherData) {
   const tMin = weatherData.daily?.temperature_2m_min?.[0] ?? Math.round(weatherData.current?.temperature_2m ?? 10);
   const tMax = weatherData.daily?.temperature_2m_max?.[0] ?? Math.round(weatherData.current?.temperature_2m ?? 20);
+  const currentTemp = Math.round(weatherData.current?.temperature_2m ?? 15);
   const lluvia = weatherData.daily?.precipitation_probability_max?.[0] ?? 0;
   const viento = Math.round(weatherData.current?.wind_speed_10m ?? weatherData.current_weather?.windspeed ?? 10);
   const weatherCode = weatherData.current?.weather_code ?? weatherData.current_weather?.weathercode ?? weatherData.daily?.weather_code?.[0] ?? 0;
 
-  let alerta_coche = "Niveles, batería y presión de neumáticos en rango óptimo.";
+  let asfalto = "Asfalto Seco • Agarre 100%";
+  let visibilidad = "Visibilidad Óptima";
+  let vientoRuta = viento >= 35 ? `Rachas ${viento} km/h` : "Calma";
+  let alerta_coche = "Batería, neumáticos y niveles en rango ideal.";
   let consejo_conduccion = "Condiciones de circulación favorables y asfalto seco.";
   let precaucion_nivel = "bajo";
 
-  // Control de estado del vehículo
-  if (tMin <= 3) {
-    alerta_coche = "Riesgo de escarcha en lunas/cristales y menor rendimiento de batería.";
-  } else if (tMax >= 32) {
-    alerta_coche = "Vigila la presión de neumáticos y ventila el habitáculo antes de iniciar marcha.";
-  } else if (tMin < 8) {
-    alerta_coche = "Baja temperatura matinal: utiliza desempañador y climatización suave.";
+  // Calzada / Asfalto
+  if ((weatherCode >= 71 && weatherCode <= 86) || tMin <= 1) {
+    asfalto = "Hielo / Nieve • Frenado x2";
+    precaucion_nivel = "alto";
+  } else if (weatherCode >= 95 || lluvia >= 60) {
+    asfalto = "Riesgo Aquaplaning • Frenado x2";
+    precaucion_nivel = "alto";
+  } else if (lluvia >= 30 || (weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 82)) {
+    asfalto = "Calzada Húmeda • Frenado x1.5";
+    if (precaucion_nivel === "bajo") precaucion_nivel = "medio";
   }
 
-  // Control de conducción y nivel de riesgo
+  // Visibilidad y luces
   if (weatherCode >= 45 && weatherCode <= 48) {
-    consejo_conduccion = "Visibilidad reducida por niebla: enciende luces antiniebla y modera velocidad.";
+    visibilidad = "Niebla densa • Luces antiniebla";
     precaucion_nivel = "alto";
-  } else if (weatherCode >= 71 && weatherCode <= 86) {
-    consejo_conduccion = "Nieve o aguanieve: extrema suavidad en frenadas y aumenta distancia de seguridad.";
+  } else if (lluvia >= 40 || (weatherCode >= 51 && weatherCode <= 67)) {
+    visibilidad = "Lluvia • Luces de cruce";
+    if (precaucion_nivel === "bajo") precaucion_nivel = "medio";
+  } else if (currentTemp >= 25) {
+    visibilidad = "Sol intenso • Gafas de sol";
+  }
+
+  // Viento
+  if (viento >= 50) {
+    vientoRuta = `Viento muy fuerte (${viento} km/h)`;
     precaucion_nivel = "alto";
-  } else if (weatherCode >= 95) {
-    consejo_conduccion = "Tormenta activa: extrema precaución con balsas de agua, ráfagas y visibilidad.";
-    precaucion_nivel = "alto";
-  } else if (tMin <= 2) {
-    consejo_conduccion = "Posibles placas de hielo en pasos elevados y calzadas sombrías.";
-    precaucion_nivel = "alto";
-  } else if (lluvia >= 50 || (weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 82)) {
-    consejo_conduccion = "Calzada mojada: duplica la distancia de seguridad y vigila el aquaplaning.";
-    precaucion_nivel = "medio";
+  } else if (viento >= 30) {
+    vientoRuta = `Rachas laterales (${viento} km/h)`;
+    if (precaucion_nivel === "bajo") precaucion_nivel = "medio";
+  }
+
+  // Estado del vehículo
+  if (tMin <= 3) {
+    alerta_coche = "Escarcha en lunas: usa desempañador térmico y vigila rendimiento de batería.";
+  } else if (tMax >= 32 || currentTemp >= 30) {
+    alerta_coche = "Calor alto: ventila 2 minutos antes de arrancar y revisa presión de neumáticos.";
+  } else if (tMin < 8) {
+    alerta_coche = "Mañana fría: arranca suave y conecta climatización moderada.";
+  }
+
+  // Consejo de conducción Kumo
+  if (asfalto.includes("Hielo") || asfalto.includes("Nieve")) {
+    consejo_conduccion = "Máxima suavidad con freno y acelerador. Prohibido volantazos.";
+  } else if (asfalto.includes("Aquaplaning") || asfalto.includes("Húmeda")) {
+    consejo_conduccion = "Asfalto resbaladizo: suelta acelerador ante charcos y no frenes bruscamente en curva.";
   } else if (viento >= 40) {
-    consejo_conduccion = "Viento lateral notable: mantén firme el volante en puentes y adelantamientos.";
-    precaucion_nivel = "medio";
+    consejo_conduccion = "Atención al salir de túneles y al rebasar vehículos pesados en viaductos.";
+  } else {
+    consejo_conduccion = "Ruta despejada y asfalto en buen estado. Conducción fluida y distancias habituales.";
   }
 
   return {
+    asfalto,
+    visibilidad,
+    viento: vientoRuta,
     alerta_coche,
     consejo_conduccion,
     precaucion_nivel
@@ -583,6 +612,7 @@ function generarConsejoCocheNativo(weatherData) {
 async function generarConsejoCoche(weatherData, apiKey) {
   const tMin = weatherData.daily?.temperature_2m_min?.[0] ?? Math.round(weatherData.current?.temperature_2m ?? 10);
   const tMax = weatherData.daily?.temperature_2m_max?.[0] ?? Math.round(weatherData.current?.temperature_2m ?? 20);
+  const currentTemp = Math.round(weatherData.current?.temperature_2m ?? 15);
   const lluvia = weatherData.daily?.precipitation_probability_max?.[0] ?? 0;
   const viento = Math.round(weatherData.current?.wind_speed_10m ?? weatherData.current_weather?.windspeed ?? 10);
   const weatherCode = weatherData.current?.weather_code ?? weatherData.current_weather?.weathercode ?? weatherData.daily?.weather_code?.[0] ?? 0;
@@ -591,16 +621,20 @@ async function generarConsejoCoche(weatherData, apiKey) {
     return generarConsejoCocheNativo(weatherData);
   }
 
-  const prompt = `Actúa como asistente vial y mecánico experto. Analiza estos datos meteorológicos:
-- Temperatura mín/máx: ${tMin}°C / ${tMax}°C
+  const prompt = `Actúa como copiloto vial y mecánico experto con la personalidad de Kumo (directa, inteligente y concisa).
+Analiza estos datos meteorológicos:
+- Temperatura actual / mín / máx: ${currentTemp}°C / ${tMin}°C / ${tMax}°C
 - Probabilidad de lluvia: ${lluvia}%
 - Velocidad del viento: ${viento} km/h
 - Código WMO: ${weatherCode}
 
-Devuelve un JSON estricto con:
+Devuelve exclusivamente un JSON estricto con:
 {
-  "alerta_coche": "Frase de 1 línea sobre el estado del vehículo (cristales, batería, presión o climatización)",
-  "consejo_conduccion": "Frase de 1 línea sobre la conducción (visibilidad, distancia de seguridad, viento o asfalto)",
+  "asfalto": "Asfalto Seco • Agarre 100%" | "Calzada Húmeda • Frenado x1.5" | "Riesgo Aquaplaning • Frenado x2" | "Hielo / Nieve • Precaución x2",
+  "visibilidad": "Óptima" | "Luces de Cruce requeridas" | "Niebla / Antinieblas" | "Deslumbramiento solar",
+  "viento": "Calma" | "Rachas laterales moderadas" | "Viento fuerte lateral",
+  "alerta_coche": "Checklist conciso del vehículo: lunas/vaho, batería, climatización o neumáticos (1 frase)",
+  "consejo_conduccion": "Consejo de conducción directo e ingenioso de Kumo (máx 20 palabras)",
   "precaucion_nivel": "bajo" | "medio" | "alto"
 }`;
 
@@ -609,6 +643,9 @@ Devuelve un JSON estricto con:
     const cleanJson = extractJsonFromText(rawText);
     
     return {
+      asfalto: cleanJson.asfalto || "Asfalto Seco • Agarre 100%",
+      visibilidad: cleanJson.visibilidad || "Óptima",
+      viento: cleanJson.viento || "Calma",
       alerta_coche: cleanJson.alerta_coche || "Niveles y neumáticos en buen estado.",
       consejo_conduccion: cleanJson.consejo_conduccion || "Conducción regular.",
       precaucion_nivel: (cleanJson.precaucion_nivel || "bajo").toLowerCase()
@@ -734,6 +771,9 @@ async function procesarReporteCompleto() {
 
   // Manejo de la Tarjeta de Conducción / Coche si modoTransporte === "coche"
   const carCard = document.getElementById("car-module-card") || document.getElementById("car-assistant-card");
+  const carRoadStatus = document.getElementById("car-road-status");
+  const carVisibilityStatus = document.getElementById("car-visibility-status");
+  const carWindStatus = document.getElementById("car-wind-status");
   const carVehicleStatus = document.getElementById("car-vehicle-status") || document.getElementById("car-vehicle-alert");
   const carDrivingStatus = document.getElementById("car-driving-status") || document.getElementById("car-driving-advice");
   const carBadge = document.getElementById("car-badge") || document.getElementById("car-risk-badge");
@@ -742,12 +782,15 @@ async function procesarReporteCompleto() {
     if (carCard) carCard.style.display = "flex";
     try {
       const consejoCoche = await generarConsejoCoche(clima, apiKey);
+      if (carRoadStatus) carRoadStatus.textContent = consejoCoche.asfalto || "Asfalto Seco • Agarre 100%";
+      if (carVisibilityStatus) carVisibilityStatus.textContent = consejoCoche.visibilidad || "Óptima";
+      if (carWindStatus) carWindStatus.textContent = consejoCoche.viento || "Calma";
       if (carVehicleStatus) carVehicleStatus.textContent = consejoCoche.alerta_coche;
       if (carDrivingStatus) carDrivingStatus.textContent = consejoCoche.consejo_conduccion;
       if (carBadge) {
         const nivel = (consejoCoche.precaucion_nivel || "bajo").toLowerCase();
         carBadge.className = `badge badge-${nivel === "alto" ? "high" : nivel === "medio" ? "med" : "low"}`;
-        carBadge.textContent = nivel === "alto" ? "Atención Alta" : nivel === "medio" ? "Precaución" : "Normal";
+        carBadge.textContent = nivel === "alto" ? "Atención Alta" : nivel === "medio" ? "Precaución" : "Favorable";
       }
     } catch (e) {
       console.warn("Error al renderizar consejo de coche:", e);
