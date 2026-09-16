@@ -39,6 +39,62 @@ body {
 .air-content p { font-size: 0.78rem; color: #d1d5db; margin-top: 0.2rem; line-height: 1.3; }
 .badge-tag { background: #451a03; color: #fde68a; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.65rem; }
 
+/* Banner de Alerta Crítica */
+.critical-banner {
+  background: linear-gradient(135deg, #450a0a, #7f1d1d);
+  border: 1px solid #dc2626;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  box-shadow: 0 4px 20px rgba(220, 38, 38, 0.4);
+  animation: pulseCritical 2s infinite ease-in-out;
+  transition: all 0.3s ease;
+}
+
+.critical-banner.hidden {
+  display: none !important;
+}
+
+@keyframes pulseCritical {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(220, 38, 38, 0.3);
+    border-color: #dc2626;
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.6);
+    border-color: #f87171;
+  }
+}
+
+.critical-banner .alert-icon {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+}
+
+.critical-banner .alert-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.critical-banner #alert-title {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #fecaca;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.critical-banner #alert-message {
+  font-size: 0.8rem;
+  color: #fff;
+  line-height: 1.3;
+  margin: 0;
+}
+
 /* Tarjeta Principal */
 .app-card {
   background: #0d1424;
