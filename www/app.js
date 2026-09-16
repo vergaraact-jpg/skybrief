@@ -4,8 +4,14 @@
 const DEFAULT_COORDS = { lat: 40.4168, lon: -3.7038, city: "Madrid" };
 const DEFAULT_SCHEDULE = {
   morning: 9,
+  morningMinute: 0,
+  morningTime: "09:00",
   afternoon: 15,
-  night: 21
+  afternoonMinute: 0,
+  afternoonTime: "15:00",
+  night: 21,
+  nightMinute: 0,
+  nightTime: "21:00"
 };
 
 let modoTransporte = "metro"; // 'metro' o 'coche'
@@ -118,45 +124,87 @@ btnRefresh.addEventListener("click", () => {
 // ==========================================
 function getUserSchedule() {
   const saved = localStorage.getItem("skybrief_user_schedule");
-  if (!saved) return DEFAULT_SCHEDULE;
+  if (!saved) return { ...DEFAULT_SCHEDULE };
   try {
-    return JSON.parse(saved);
+    const parsed = JSON.parse(saved);
+    const mTime = parsed.morningTime || (parsed.morning !== undefined ? `${String(parsed.morning).padStart(2, "0")}:00` : "09:00");
+    const aTime = parsed.afternoonTime || (parsed.afternoon !== undefined ? `${String(parsed.afternoon).padStart(2, "0")}:00` : "15:00");
+    const nTime = parsed.nightTime || (parsed.night !== undefined ? `${String(parsed.night).padStart(2, "0")}:00` : "21:00");
+
+    const [mH, mM] = mTime.split(":").map(Number);
+    const [aH, aM] = aTime.split(":").map(Number);
+    const [nH, nM] = nTime.split(":").map(Number);
+
+    return {
+      morning: !isNaN(mH) ? mH : (parsed.morning ?? 9),
+      morningMinute: !isNaN(mM) ? mM : (parsed.morningMinute ?? 0),
+      morningTime: mTime,
+      afternoon: !isNaN(aH) ? aH : (parsed.afternoon ?? 15),
+      afternoonMinute: !isNaN(aM) ? aM : (parsed.afternoonMinute ?? 0),
+      afternoonTime: aTime,
+      night: !isNaN(nH) ? nH : (parsed.night ?? 21),
+      nightMinute: !isNaN(nM) ? nM : (parsed.nightMinute ?? 0),
+      nightTime: nTime
+    };
   } catch (e) {
-    return DEFAULT_SCHEDULE;
+    return { ...DEFAULT_SCHEDULE };
   }
 }
 
-function initScheduleInputs() {
+// Elementos de configuración horaria
+const timeMorningInput = document.getElementById("time-morning");
+const timeAfternoonInput = document.getElementById("time-afternoon");
+const timeNightInput = document.getElementById("time-night");
+const btnSaveSchedule = document.getElementById("btn-save-schedule");
+const scheduleStatus = document.getElementById("schedule-status");
+
+function restaurarInputsHorarios() {
   const schedule = getUserSchedule();
-  const mInput = document.getElementById("time-morning");
-  const aInput = document.getElementById("time-afternoon");
-  const nInput = document.getElementById("time-night");
+  if (timeMorningInput) timeMorningInput.value = schedule.morningTime;
+  if (timeAfternoonInput) timeAfternoonInput.value = schedule.afternoonTime;
+  if (timeNightInput) timeNightInput.value = schedule.nightTime;
+}
 
-  if (mInput) mInput.value = `${String(schedule.morning).padStart(2, "0")}:00`;
-  if (aInput) aInput.value = `${String(schedule.afternoon).padStart(2, "0")}:00`;
-  if (nInput) nInput.value = `${String(schedule.night).padStart(2, "0")}:00`;
+// Restaurar inmediatamente al cargar el script
+restaurarInputsHorarios();
 
-  const btnSave = document.getElementById("btn-save-schedule");
-  if (btnSave) {
-    btnSave.addEventListener("click", () => {
-      const updatedSchedule = {
-        morning: parseInt(mInput?.value.split(":")[0], 10) || DEFAULT_SCHEDULE.morning,
-        afternoon: parseInt(aInput?.value.split(":")[0], 10) || DEFAULT_SCHEDULE.afternoon,
-        night: parseInt(nInput?.value.split(":")[0], 10) || DEFAULT_SCHEDULE.night
-      };
-      localStorage.setItem("skybrief_user_schedule", JSON.stringify(updatedSchedule));
-      
-      const scheduleStatus = document.getElementById("schedule-status");
-      if (scheduleStatus) {
-        scheduleStatus.textContent = "✓ Horarios guardados correctamente.";
-        scheduleStatus.style.color = "#38bdf8";
-        setTimeout(() => { scheduleStatus.textContent = ""; }, 3000);
-      }
-      
-      alert("Horarios guardados correctamente.");
-      procesarReporteCompleto();
-    });
-  }
+if (btnSaveSchedule) {
+  btnSaveSchedule.addEventListener("click", async () => {
+    const mVal = timeMorningInput?.value || "09:00";
+    const aVal = timeAfternoonInput?.value || "15:00";
+    const nVal = timeNightInput?.value || "21:00";
+
+    const [mH, mM] = mVal.split(":").map(Number);
+    const [aH, aM] = aVal.split(":").map(Number);
+    const [nH, nM] = nVal.split(":").map(Number);
+
+    const updatedSchedule = {
+      morning: !isNaN(mH) ? mH : 9,
+      morningMinute: !isNaN(mM) ? mM : 0,
+      morningTime: mVal,
+      afternoon: !isNaN(aH) ? aH : 15,
+      afternoonMinute: !isNaN(aM) ? aM : 0,
+      afternoonTime: aVal,
+      night: !isNaN(nH) ? nH : 21,
+      nightMinute: !isNaN(nM) ? nM : 0,
+      nightTime: nVal
+    };
+
+    localStorage.setItem("skybrief_user_schedule", JSON.stringify(updatedSchedule));
+    restaurarInputsHorarios();
+
+    // Sincronizar avisos en Capacitor si está activo
+    await programarAvisosBriefing(updatedSchedule);
+
+    if (scheduleStatus) {
+      scheduleStatus.textContent = `✓ Guardado: Mañana (${mVal}), Tarde (${aVal}), Noche (${nVal})`;
+      scheduleStatus.style.color = "#38bdf8";
+      setTimeout(() => { if (scheduleStatus) scheduleStatus.textContent = ""; }, 4000);
+    }
+
+    alert(`✓ Horarios guardados con éxito:\n• Mañana: ${mVal}\n• Tarde: ${aVal}\n• Noche: ${nVal}`);
+    procesarReporteCompleto();
+  });
 }
 
 // ==========================================
@@ -874,7 +922,7 @@ async function iniciarApp() {
   cityTitle.textContent = coordsActuales.city;
 
   inicializarMapa(coordsActuales.lat, coordsActuales.lon);
-  initScheduleInputs();
+  restaurarInputsHorarios();
 
   try {
     datosMeteorologicos = await getWeatherData(coordsActuales.lat, coordsActuales.lon);
@@ -887,44 +935,32 @@ async function iniciarApp() {
   }
 }
 
-window.addEventListener("DOMContentLoaded", iniciarApp);
+// Inicialización segura contra estado de carga del DOM
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", iniciarApp);
+} else {
+  iniciarApp();
+}
 
 // ==========================================
-// 7. GESTIÓN DE NOTIFICACIÓN MATUTINA (CONTROL ÚNICO DIARIO)
+// 7. GESTIÓN DE NOTIFICACIONES DIARIAS Y HORARIOS (CAPACITOR & PWA)
 // ==========================================
 const notifyTimeInput = document.getElementById("notify-time");
 const btnSetAlert = document.getElementById("btn-set-alert");
 const notifyStatus = document.getElementById("notify-status");
 const notifBadge = document.getElementById("notif-badge");
 
-// Control único diario para evitar repeticiones
-function shouldTriggerNotification(targetTimeStr) {
-  const now = new Date();
-  const todayKey = now.toISOString().split("T")[0]; // "YYYY-MM-DD"
-  const lastSent = localStorage.getItem("skybrief_last_notification");
-
-  if (lastSent === todayKey) {
-    return false; // Ya se envió hoy
-  }
-
-  const [targetHours, targetMinutes] = targetTimeStr.split(":").map(Number);
-  const currentHours = now.getHours();
-  const currentMinutes = now.getMinutes();
-
-  if (currentHours === targetHours && currentMinutes === targetMinutes) {
-    localStorage.setItem("skybrief_last_notification", todayKey);
-    return true;
-  }
-  return false;
-}
-
-// Restaurar hora configurada previamente
+// Restaurar hora configurada previamente para aviso matutino
 if (localStorage.getItem("notify_time")) {
-  notifyTimeInput.value = localStorage.getItem("notify_time");
-  notifBadge.textContent = "Activo";
-  notifBadge.style.background = "#065f46";
-  notifBadge.style.color = "#6ee7b7";
-  notifyStatus.textContent = `Aviso programado a las ${notifyTimeInput.value}`;
+  if (notifyTimeInput) notifyTimeInput.value = localStorage.getItem("notify_time");
+  if (notifBadge) {
+    notifBadge.textContent = "Activo";
+    notifBadge.style.background = "#065f46";
+    notifBadge.style.color = "#6ee7b7";
+  }
+  if (notifyStatus && notifyTimeInput) {
+    notifyStatus.textContent = `Aviso diario programado a las ${notifyTimeInput.value}`;
+  }
 }
 
 // Obtener estado visual del clima para la notificación (Sol, Lluvia, Frío, Calor)
@@ -955,6 +991,82 @@ function obtenerMetricasClimaNotificacion() {
   return { condicion: "sol", icono: "☀️", color: "#f59e0b", tag: "Soleado", iconFile: "icons/weather-sun.png" };
 }
 
+// Programar los 3 avisos diarios (Mañana, Tarde, Noche) en Capacitor
+async function programarAvisosBriefing(schedule) {
+  const LocalNotifications = window.Capacitor?.Plugins?.LocalNotifications;
+  if (!LocalNotifications) return;
+
+  const weatherInfo = obtenerMetricasClimaNotificacion();
+  const tempTexto = document.getElementById("temp-display")?.textContent || "--°C";
+
+  try {
+    const permiso = await LocalNotifications.requestPermissions();
+    if (permiso.display !== "granted") return;
+
+    // Cancelar avisos de briefing anteriores
+    try {
+      await LocalNotifications.cancel({ notifications: [{ id: 101 }, { id: 102 }, { id: 103 }] });
+    } catch (e) {}
+
+    // Programar los 3 avisos
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: 101,
+          title: `🌅 Kumo • Mañana (${tempTexto})`,
+          body: `${weatherInfo.icono} Consulta tu previsión y vestimenta para la mañana.`,
+          schedule: { 
+            on: {
+              hour: schedule.morning,
+              minute: schedule.morningMinute
+            },
+            allowWhileIdle: true
+          },
+          sound: "beep.wav",
+          iconColor: "#38bdf8",
+          smallIcon: "ic_stat_name",
+          largeIcon: "kumo_avatar"
+        },
+        {
+          id: 102,
+          title: `☀️ Kumo • Tarde`,
+          body: `${weatherInfo.icono} Actualización meteorológica y vial para la tarde.`,
+          schedule: { 
+            on: {
+              hour: schedule.afternoon,
+              minute: schedule.afternoonMinute
+            },
+            allowWhileIdle: true
+          },
+          sound: "beep.wav",
+          iconColor: "#f59e0b",
+          smallIcon: "ic_stat_name",
+          largeIcon: "kumo_avatar"
+        },
+        {
+          id: 103,
+          title: `🌙 Kumo • Noche`,
+          body: `${weatherInfo.icono} Previsión nocturna y resumen de temperaturas.`,
+          schedule: { 
+            on: {
+              hour: schedule.night,
+              minute: schedule.nightMinute
+            },
+            allowWhileIdle: true
+          },
+          sound: "beep.wav",
+          iconColor: "#818cf8",
+          smallIcon: "ic_stat_name",
+          largeIcon: "kumo_avatar"
+        }
+      ]
+    });
+  } catch (e) {
+    console.warn("No se pudieron programar los avisos en Capacitor:", e);
+  }
+}
+
+// Alarma matutina personalizada
 async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
   const LocalNotifications = window.Capacitor?.Plugins?.LocalNotifications;
   const weatherInfo = obtenerMetricasClimaNotificacion();
@@ -969,15 +1081,13 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
     }
 
     try {
-      // Cancelar cualquier alarma previa registrada con este ID
-      await LocalNotifications.cancel({ notifications: [{ id: 101 }] });
+      await LocalNotifications.cancel({ notifications: [{ id: 100 }] });
     } catch (e) {}
 
-    // Programar usando schedule.on (formato calendario nativo diario de Capacitor)
     await LocalNotifications.schedule({
       notifications: [
         {
-          id: 101,
+          id: 100,
           title: tituloNotificacion,
           body: `${weatherInfo.icono} ${textoConsejo || "Consulta tu recomendación de vestimenta y movilidad para hoy."}`,
           schedule: { 
@@ -996,10 +1106,12 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
     });
 
     localStorage.setItem("notify_time", horaString);
-    notifBadge.textContent = "Activo";
-    notifBadge.style.background = "#065f46";
-    notifBadge.style.color = "#6ee7b7";
-    notifyStatus.textContent = `${weatherInfo.icono} Aviso diario programado a las ${horaString}`;
+    if (notifBadge) {
+      notifBadge.textContent = "Activo";
+      notifBadge.style.background = "#065f46";
+      notifBadge.style.color = "#6ee7b7";
+    }
+    if (notifyStatus) notifyStatus.textContent = `${weatherInfo.icono} Aviso diario programado a las ${horaString}`;
     alert(`Aviso (${weatherInfo.tag}) programado con éxito todos los días a las ${horaString}.`);
     return;
   }
@@ -1009,10 +1121,12 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
     const permiso = await Notification.requestPermission();
     if (permiso === "granted") {
       localStorage.setItem("notify_time", horaString);
-      notifBadge.textContent = "Activo";
-      notifBadge.style.background = "#065f46";
-      notifBadge.style.color = "#6ee7b7";
-      notifyStatus.textContent = `${weatherInfo.icono} Aviso diario activado para las ${horaString}`;
+      if (notifBadge) {
+        notifBadge.textContent = "Activo";
+        notifBadge.style.background = "#065f46";
+        notifBadge.style.color = "#6ee7b7";
+      }
+      if (notifyStatus) notifyStatus.textContent = `${weatherInfo.icono} Aviso diario activado para las ${horaString}`;
       iniciarLoopNotificacionWeb();
       alert(`Aviso web programado a las ${horaString}.`);
     } else {
@@ -1023,38 +1137,69 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
   }
 }
 
-// Bucle en segundo plano para navegador web / PWA con guardia anti-duplicados por día
+// Guardia anti-duplicados por día en navegador Web / PWA
+function verificarDisparoWebNotif(timeStr, keySuffix, titleFn, bodyFn) {
+  if (!timeStr) return;
+  const now = new Date();
+  const todayKey = now.toISOString().split("T")[0];
+  const storageKey = `skybrief_web_notif_${keySuffix}_date`;
+  if (localStorage.getItem(storageKey) === todayKey) return;
+
+  const [tH, tM] = timeStr.split(":").map(Number);
+  if (now.getHours() === tH && now.getMinutes() === tM) {
+    localStorage.setItem(storageKey, todayKey);
+    const weatherInfo = obtenerMetricasClimaNotificacion();
+    const tempTexto = document.getElementById("temp-display")?.textContent || "--°C";
+    new Notification(titleFn(weatherInfo, tempTexto), {
+      body: bodyFn(weatherInfo),
+      icon: "icons/kumo-avatar.png",
+      badge: "icons/icon-192.png"
+    });
+  }
+}
+
 let webIntervalTimer = null;
 function iniciarLoopNotificacionWeb() {
   if (webIntervalTimer) clearInterval(webIntervalTimer);
 
   webIntervalTimer = setInterval(() => {
     const horaGuardada = localStorage.getItem("notify_time");
-    if (!horaGuardada) return;
+    if (horaGuardada) {
+      const consejoTexto = document.getElementById("alert-text")?.textContent || "Consulta tu recomendación del día.";
+      verificarDisparoWebNotif(horaGuardada, "matutina",
+        (w, t) => `Kumo • ${w.tag} (${t})`,
+        (w) => `${w.icono} ${consejoTexto}`
+      );
+    }
 
-    if (shouldTriggerNotification(horaGuardada)) {
-      const weatherInfo = obtenerMetricasClimaNotificacion();
-      const consejoTexto = document.getElementById("alert-text")?.textContent || "";
-      const tempTexto = document.getElementById("temp-display")?.textContent || "--°C";
-
-      new Notification(`Kumo • ${weatherInfo.tag} (${tempTexto})`, {
-        body: `${weatherInfo.icono} ${consejoTexto}`,
-        icon: "icons/kumo-avatar.png",
-        badge: "icons/icon-192.png"
-      });
+    const schedule = getUserSchedule();
+    if (schedule) {
+      verificarDisparoWebNotif(schedule.morningTime, "morning",
+        (w, t) => `🌅 Kumo • Briefing Mañana (${t})`,
+        (w) => `${w.icono} Previsión y vestimenta para la mañana.`
+      );
+      verificarDisparoWebNotif(schedule.afternoonTime, "afternoon",
+        (w, t) => `☀️ Kumo • Briefing Tarde`,
+        (w) => `${w.icono} Actualización meteorológica y vial para la tarde.`
+      );
+      verificarDisparoWebNotif(schedule.nightTime, "night",
+        (w, t) => `🌙 Kumo • Briefing Noche`,
+        (w) => `${w.icono} Previsión nocturna y resumen de temperaturas.`
+      );
     }
   }, 30000); // Comprueba cada 30 segundos
 }
 
-if (localStorage.getItem("notify_time")) {
+if (localStorage.getItem("notify_time") || localStorage.getItem("skybrief_user_schedule")) {
   iniciarLoopNotificacionWeb();
 }
 
 if (btnSetAlert) {
   btnSetAlert.addEventListener("click", () => {
-    const hora = notifyTimeInput.value;
+    const hora = notifyTimeInput ? notifyTimeInput.value : "07:30";
     const consejoTexto = document.getElementById("alert-text")?.textContent || "";
     const tempTexto = document.getElementById("temp-display")?.textContent || "--°C";
     programarAlarmaMatutina(hora, consejoTexto, tempTexto);
   });
 }
+
