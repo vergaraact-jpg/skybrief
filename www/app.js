@@ -449,12 +449,34 @@ async function iniciarApp() {
 window.addEventListener("DOMContentLoaded", iniciarApp);
 
 // ==========================================
-// 6. GESTIÓN DE NOTIFICACIÓN MATUTINA (NATIVA CON CAPACITOR / WEB)
+// 6. GESTIÓN DE NOTIFICACIÓN MATUTINA (CONTROL ÚNICO DIARIO)
 // ==========================================
 const notifyTimeInput = document.getElementById("notify-time");
 const btnSetAlert = document.getElementById("btn-set-alert");
 const notifyStatus = document.getElementById("notify-status");
 const notifBadge = document.getElementById("notif-badge");
+
+// Control único diario para evitar repeticiones
+function shouldTriggerNotification(targetTimeStr) {
+  const now = new Date();
+  const todayKey = now.toISOString().split("T")[0]; // "YYYY-MM-DD"
+  const lastSent = localStorage.getItem("skybrief_last_notification");
+
+  if (lastSent === todayKey) {
+    return false; // Ya se envió hoy
+  }
+
+  const [targetHours, targetMinutes] = targetTimeStr.split(":").map(Number);
+  const currentHours = now.getHours();
+  const currentMinutes = now.getMinutes();
+
+  // Comprueba si coincide con la hora objetivo exacta
+  if (currentHours === targetHours && currentMinutes === targetMinutes) {
+    localStorage.setItem("skybrief_last_notification", todayKey);
+    return true;
+  }
+  return false;
+}
 
 // Restaurar hora configurada previamente
 if (localStorage.getItem("notify_time")) {
@@ -479,14 +501,17 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
     const fechaDisparo = new Date();
     fechaDisparo.setHours(horas, minutos, 0, 0);
 
+    // Si la hora ya pasó hoy, programar para mañana
     if (fechaDisparo <= new Date()) {
       fechaDisparo.setDate(fechaDisparo.getDate() + 1);
     }
 
+    // Cancelar cualquier aviso anterior para evitar duplicados o spam
     try {
       await LocalNotifications.cancel({ notifications: [{ id: 101 }] });
     } catch (e) {}
 
+    // Programar la alarma nativa del sistema operativo
     await LocalNotifications.schedule({
       notifications: [
         {
@@ -509,7 +534,7 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
     notifBadge.textContent = "Activo";
     notifBadge.style.background = "#065f46";
     notifBadge.style.color = "#6ee7b7";
-    notifyStatus.textContent = `Aviso nativo diario a las ${horaString}`;
+    notifyStatus.textContent = `Aviso diario programado a las ${horaString}`;
     alert(`Aviso programado con éxito todos los días a las ${horaString}.`);
     return;
   }
@@ -523,11 +548,7 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
       notifBadge.style.background = "#065f46";
       notifBadge.style.color = "#6ee7b7";
       notifyStatus.textContent = `Aviso diario activado para las ${horaString}`;
-
-      new Notification("SkyBrief Activado", {
-        body: `Te avisaremos a las ${horaString} con el reporte del tiempo y qué ponerte.`,
-        icon: "icon.png"
-      });
+      alert(`Aviso web programado a las ${horaString}.`);
     } else {
       alert("Debes conceder permisos de notificación en Android para recibir el aviso.");
     }
@@ -536,32 +557,12 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
   }
 }
 
-btnSetAlert.addEventListener("click", () => {
-  const hora = notifyTimeInput.value;
-  const consejoTexto = document.getElementById("alert-text")?.textContent || "";
-  const tempTexto = document.getElementById("temp-display")?.textContent || "--°C";
-  programarAlarmaMatutina(hora, consejoTexto, tempTexto);
-});
+if (btnSetAlert) {
+  btnSetAlert.addEventListener("click", () => {
+    const hora = notifyTimeInput.value;
+    const consejoTexto = document.getElementById("alert-text")?.textContent || "";
+    const tempTexto = document.getElementById("temp-display")?.textContent || "--°C";
+    programarAlarmaMatutina(hora, consejoTexto, tempTexto);
+  });
+}
 
-// Comprobación de reloj en segundo plano (fallback web)
-setInterval(() => {
-  if (window.Capacitor?.Plugins?.LocalNotifications) return;
-
-  const horaGuardada = localStorage.getItem("notify_time");
-  if (!horaGuardada) return;
-
-  const ahora = new Date();
-  const actualStr = ahora.toTimeString().slice(0, 5);
-
-  if (actualStr === horaGuardada && ahora.getSeconds() === 0) {
-    if (Notification.permission === "granted") {
-      const consejoTexto = document.getElementById("alert-text").textContent;
-      const tempTexto = document.getElementById("temp-display").textContent;
-
-      new Notification(`SkyBrief (${tempTexto})`, {
-        body: consejoTexto || "Consulta tu recomendación de vestimenta para hoy.",
-        icon: "icon.png"
-      });
-    }
-  }
-}, 1000);
