@@ -959,6 +959,7 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
   const LocalNotifications = window.Capacitor?.Plugins?.LocalNotifications;
   const weatherInfo = obtenerMetricasClimaNotificacion();
   const tituloNotificacion = `${weatherInfo.icono} Kumo • ${weatherInfo.tag} (${tempTexto})`;
+  const [horas, minutos] = horaString.split(":").map(Number);
 
   if (LocalNotifications) {
     const permiso = await LocalNotifications.requestPermissions();
@@ -967,18 +968,12 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
       return;
     }
 
-    const [horas, minutos] = horaString.split(":").map(Number);
-    const fechaDisparo = new Date();
-    fechaDisparo.setHours(horas, minutos, 0, 0);
-
-    if (fechaDisparo <= new Date()) {
-      fechaDisparo.setDate(fechaDisparo.getDate() + 1);
-    }
-
     try {
+      // Cancelar cualquier alarma previa registrada con este ID
       await LocalNotifications.cancel({ notifications: [{ id: 101 }] });
     } catch (e) {}
 
+    // Programar usando schedule.on (formato calendario nativo diario de Capacitor)
     await LocalNotifications.schedule({
       notifications: [
         {
@@ -986,9 +981,10 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
           title: tituloNotificacion,
           body: `${weatherInfo.icono} ${textoConsejo || "Consulta tu recomendación de vestimenta y movilidad para hoy."}`,
           schedule: { 
-            at: fechaDisparo,
-            repeats: true,
-            every: "day",
+            on: {
+              hour: horas,
+              minute: minutos
+            },
             allowWhileIdle: true
           },
           sound: "beep.wav",
@@ -1016,13 +1012,40 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
       notifBadge.style.background = "#065f46";
       notifBadge.style.color = "#6ee7b7";
       notifyStatus.textContent = `${weatherInfo.icono} Aviso diario activado para las ${horaString}`;
+      iniciarLoopNotificacionWeb();
       alert(`Aviso web programado a las ${horaString}.`);
     } else {
-      alert("Debes conceder permisos de notificación en Android para recibir el aviso.");
+      alert("Debes conceder permisos de notificación para recibir el aviso.");
     }
   } else {
     alert("Tu navegador no soporta notificaciones locales.");
   }
+}
+
+// Bucle en segundo plano para navegador web / PWA con guardia anti-duplicados por día
+let webIntervalTimer = null;
+function iniciarLoopNotificacionWeb() {
+  if (webIntervalTimer) clearInterval(webIntervalTimer);
+
+  webIntervalTimer = setInterval(() => {
+    const horaGuardada = localStorage.getItem("notify_time");
+    if (!horaGuardada) return;
+
+    if (shouldTriggerNotification(horaGuardada)) {
+      const weatherInfo = obtenerMetricasClimaNotificacion();
+      const consejoTexto = document.getElementById("alert-text")?.textContent || "";
+      const tempTexto = document.getElementById("temp-display")?.textContent || "--°C";
+
+      new Notification(`SkyBrief • ${weatherInfo.tag} (${tempTexto})`, {
+        body: `${weatherInfo.icono} ${consejoTexto}`,
+        icon: weatherInfo.iconFile
+      });
+    }
+  }, 30000); // Comprueba cada 30 segundos
+}
+
+if (localStorage.getItem("notify_time")) {
+  iniciarLoopNotificacionWeb();
 }
 
 if (btnSetAlert) {
