@@ -849,6 +849,11 @@ async function procesarReporteCompleto() {
 
   // Comprobar alertas críticas (Sismos USGS y clima extremo)
   await verificarAlertasCriticas(clima);
+
+  // Sincronizar avisos con los datos y temperaturas meteorológicas frescas
+  if (localStorage.getItem("skybrief_user_schedule")) {
+    programarAvisosBriefing(schedule);
+  }
 }
 
 // ==========================================
@@ -963,41 +968,117 @@ if (localStorage.getItem("notify_time")) {
   }
 }
 
-// Obtener estado visual del clima para la notificación (Sol, Lluvia, Frío, Calor)
+// Obtener estado visual del clima y métricas ampliadas para la notificación
 function obtenerMetricasClimaNotificacion() {
   if (!datosMeteorologicos || !datosMeteorologicos.clima) {
-    return { condicion: "sol", icono: "☀️", color: "#f59e0b", tag: "Soleado", iconFile: "icons/weather-sun.png" };
+    return {
+      condicion: "sol",
+      icono: "☀️",
+      color: "#f59e0b",
+      tag: "Soleado",
+      iconFile: "icons/weather-sun.png",
+      tempActual: 20,
+      tempMin: 14,
+      tempMax: 22,
+      lluviaProb: 0,
+      vientoMax: 10,
+      tempManana: 16,
+      tempTarde: 21,
+      tempNoche: 17,
+      lluviaManana: 0,
+      lluviaTarde: 0,
+      lluviaNoche: 0
+    };
   }
+
   const { clima } = datosMeteorologicos;
+  const schedule = getUserSchedule();
+
   const tempActual = Math.round(clima.current?.temperature_2m ?? clima.current_weather?.temperature ?? 20);
   const tempMin = Math.round(clima.daily?.temperature_2m_min?.[0] ?? tempActual);
   const tempMax = Math.round(clima.daily?.temperature_2m_max?.[0] ?? tempActual);
   const lluviaProb = clima.daily?.precipitation_probability_max?.[0] ?? 0;
+  const vientoMax = Math.round(clima.daily?.wind_speed_10m_max?.[0] ?? clima.current?.wind_speed_10m ?? 10);
   const weatherCode = clima.current?.weather_code ?? clima.current_weather?.weathercode ?? 0;
+
+  // Extraer temperaturas horarias específicas de cada tramo
+  const mH = schedule.morning ?? 9;
+  const aH = schedule.afternoon ?? 15;
+  const nH = schedule.night ?? 21;
+
+  const tempManana = clima.hourly?.temperature_2m?.[mH] !== undefined 
+    ? Math.round(clima.hourly.temperature_2m[mH]) 
+    : tempActual;
+  const tempTarde = clima.hourly?.temperature_2m?.[aH] !== undefined 
+    ? Math.round(clima.hourly.temperature_2m[aH]) 
+    : tempMax;
+  const tempNoche = clima.hourly?.temperature_2m?.[nH] !== undefined 
+    ? Math.round(clima.hourly.temperature_2m[nH]) 
+    : Math.round((tempMin + tempActual) / 2);
+
+  const lluviaManana = clima.hourly?.precipitation_probability?.[mH] ?? lluviaProb;
+  const lluviaTarde = clima.hourly?.precipitation_probability?.[aH] ?? lluviaProb;
+  const lluviaNoche = clima.hourly?.precipitation_probability?.[nH] ?? 0;
+
+  let condicion = "sol";
+  let icono = "☀️";
+  let color = "#f59e0b";
+  let tag = "Soleado";
+  let iconFile = "icons/weather-sun.png";
 
   // Lluvia / precipitaciones
   if (lluviaProb >= 40 || (weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 99)) {
-    return { condicion: "lluvia", icono: "🌧️", color: "#38bdf8", tag: "Lluvia", iconFile: "icons/weather-rain.png" };
+    condicion = "lluvia";
+    icono = "🌧️";
+    color = "#38bdf8";
+    tag = "Lluvia";
+    iconFile = "icons/weather-rain.png";
+  } else if (tempMin <= 4 || tempActual <= 5) {
+    condicion = "frio";
+    icono = "❄️";
+    color = "#60a5fa";
+    tag = "Frío Intenso";
+    iconFile = "icons/weather-cold.png";
+  } else if (tempMax >= 30 || tempActual >= 28) {
+    condicion = "calor";
+    icono = "🔥";
+    color = "#ef4444";
+    tag = "Calor Intenso";
+    iconFile = "icons/weather-heat.png";
+  } else if (weatherCode === 1 || weatherCode === 2 || weatherCode === 3) {
+    condicion = "nublado";
+    icono = "⛅";
+    color = "#94a3b8";
+    tag = "Intervalos nubosos";
+    iconFile = "icons/weather-sun.png";
   }
-  // Frío / helada
-  if (tempMin <= 4 || tempActual <= 5) {
-    return { condicion: "frio", icono: "❄️", color: "#60a5fa", tag: "Frío", iconFile: "icons/weather-cold.png" };
-  }
-  // Calor
-  if (tempMax >= 30 || tempActual >= 28) {
-    return { condicion: "calor", icono: "🔥", color: "#ef4444", tag: "Calor Intenso", iconFile: "icons/weather-heat.png" };
-  }
-  // Sol / tiempo despejado
-  return { condicion: "sol", icono: "☀️", color: "#f59e0b", tag: "Soleado", iconFile: "icons/weather-sun.png" };
+
+  return {
+    condicion,
+    icono,
+    color,
+    tag,
+    iconFile,
+    tempActual,
+    tempMin,
+    tempMax,
+    lluviaProb,
+    vientoMax,
+    tempManana,
+    tempTarde,
+    tempNoche,
+    lluviaManana,
+    lluviaTarde,
+    lluviaNoche
+  };
 }
 
-// Programar los 3 avisos diarios (Mañana, Tarde, Noche) en Capacitor
+// Programar los 3 avisos diarios (Mañana, Tarde, Noche) en Capacitor con temperaturas completas
 async function programarAvisosBriefing(schedule) {
   const LocalNotifications = window.Capacitor?.Plugins?.LocalNotifications;
   if (!LocalNotifications) return;
 
-  const weatherInfo = obtenerMetricasClimaNotificacion();
-  const tempTexto = document.getElementById("temp-display")?.textContent || "--°C";
+  const m = obtenerMetricasClimaNotificacion();
 
   try {
     const permiso = await LocalNotifications.requestPermissions();
@@ -1008,13 +1089,13 @@ async function programarAvisosBriefing(schedule) {
       await LocalNotifications.cancel({ notifications: [{ id: 101 }, { id: 102 }, { id: 103 }] });
     } catch (e) {}
 
-    // Programar los 3 avisos
+    // Programar los 3 avisos con datos específicos de temperatura
     await LocalNotifications.schedule({
       notifications: [
         {
           id: 101,
-          title: `🌅 Kumo • Mañana (${tempTexto})`,
-          body: `${weatherInfo.icono} Consulta tu previsión y vestimenta para la mañana.`,
+          title: `🌅 Kumo • Mañana: ${m.tempManana}°C (Mín ${m.tempMin}° / Máx ${m.tempMax}°)`,
+          body: `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaManana}%. Consulta tu vestimenta y reporte de salida.`,
           schedule: { 
             on: {
               hour: schedule.morning,
@@ -1029,8 +1110,8 @@ async function programarAvisosBriefing(schedule) {
         },
         {
           id: 102,
-          title: `☀️ Kumo • Tarde`,
-          body: `${weatherInfo.icono} Actualización meteorológica y vial para la tarde.`,
+          title: `☀️ Kumo • Tarde: ${m.tempTarde}°C (Máx ${m.tempMax}°C)`,
+          body: `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaTarde}%. Actualización de temperatura y estado vial.`,
           schedule: { 
             on: {
               hour: schedule.afternoon,
@@ -1045,8 +1126,8 @@ async function programarAvisosBriefing(schedule) {
         },
         {
           id: 103,
-          title: `🌙 Kumo • Noche`,
-          body: `${weatherInfo.icono} Previsión nocturna y resumen de temperaturas.`,
+          title: `🌙 Kumo • Noche: ${m.tempNoche}°C (Mín ${m.tempMin}°C)`,
+          body: `🌙 Noche a ${m.tempNoche}°C • Viento ${m.vientoMax} km/h. Resumen del día y previsión térmica para mañana.`,
           schedule: { 
             on: {
               hour: schedule.night,
@@ -1066,11 +1147,11 @@ async function programarAvisosBriefing(schedule) {
   }
 }
 
-// Alarma matutina personalizada
+// Alarma matutina personalizada con temperaturas completas
 async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
   const LocalNotifications = window.Capacitor?.Plugins?.LocalNotifications;
-  const weatherInfo = obtenerMetricasClimaNotificacion();
-  const tituloNotificacion = `${weatherInfo.icono} Kumo • ${weatherInfo.tag} (${tempTexto})`;
+  const m = obtenerMetricasClimaNotificacion();
+  const tituloNotificacion = `${m.icono} Kumo • ${m.tempActual}°C (Mín ${m.tempMin}° / Máx ${m.tempMax}°)`;
   const [horas, minutos] = horaString.split(":").map(Number);
 
   if (LocalNotifications) {
@@ -1084,12 +1165,14 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
       await LocalNotifications.cancel({ notifications: [{ id: 100 }] });
     } catch (e) {}
 
+    const cuerpoNotificacion = `${m.tag} • Lluvia: ${m.lluviaProb}% | ${textoConsejo || "Consulta tu recomendación de vestimenta y movilidad para hoy."}`;
+
     await LocalNotifications.schedule({
       notifications: [
         {
           id: 100,
           title: tituloNotificacion,
-          body: `${weatherInfo.icono} ${textoConsejo || "Consulta tu recomendación de vestimenta y movilidad para hoy."}`,
+          body: cuerpoNotificacion,
           schedule: { 
             on: {
               hour: horas,
@@ -1098,7 +1181,7 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
             allowWhileIdle: true
           },
           sound: "beep.wav",
-          iconColor: weatherInfo.color,
+          iconColor: m.color,
           smallIcon: "ic_stat_name",
           largeIcon: "kumo_avatar"
         }
@@ -1111,8 +1194,8 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
       notifBadge.style.background = "#065f46";
       notifBadge.style.color = "#6ee7b7";
     }
-    if (notifyStatus) notifyStatus.textContent = `${weatherInfo.icono} Aviso diario programado a las ${horaString}`;
-    alert(`Aviso (${weatherInfo.tag}) programado con éxito todos los días a las ${horaString}.`);
+    if (notifyStatus) notifyStatus.textContent = `${m.icono} Aviso diario programado a las ${horaString} (${m.tempActual}°C)`;
+    alert(`Aviso (${m.tempActual}°C, ${m.tag}) programado con éxito todos los días a las ${horaString}.`);
     return;
   }
 
@@ -1126,7 +1209,7 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
         notifBadge.style.background = "#065f46";
         notifBadge.style.color = "#6ee7b7";
       }
-      if (notifyStatus) notifyStatus.textContent = `${weatherInfo.icono} Aviso diario activado para las ${horaString}`;
+      if (notifyStatus) notifyStatus.textContent = `${m.icono} Aviso diario activado para las ${horaString} (${m.tempActual}°C)`;
       iniciarLoopNotificacionWeb();
       alert(`Aviso web programado a las ${horaString}.`);
     } else {
@@ -1148,10 +1231,9 @@ function verificarDisparoWebNotif(timeStr, keySuffix, titleFn, bodyFn) {
   const [tH, tM] = timeStr.split(":").map(Number);
   if (now.getHours() === tH && now.getMinutes() === tM) {
     localStorage.setItem(storageKey, todayKey);
-    const weatherInfo = obtenerMetricasClimaNotificacion();
-    const tempTexto = document.getElementById("temp-display")?.textContent || "--°C";
-    new Notification(titleFn(weatherInfo, tempTexto), {
-      body: bodyFn(weatherInfo),
+    const m = obtenerMetricasClimaNotificacion();
+    new Notification(titleFn(m), {
+      body: bodyFn(m),
       icon: "icons/kumo-avatar.png",
       badge: "icons/icon-192.png"
     });
@@ -1167,24 +1249,24 @@ function iniciarLoopNotificacionWeb() {
     if (horaGuardada) {
       const consejoTexto = document.getElementById("alert-text")?.textContent || "Consulta tu recomendación del día.";
       verificarDisparoWebNotif(horaGuardada, "matutina",
-        (w, t) => `Kumo • ${w.tag} (${t})`,
-        (w) => `${w.icono} ${consejoTexto}`
+        (m) => `${m.icono} Kumo • ${m.tempActual}°C (Mín ${m.tempMin}° / Máx ${m.tempMax}°)`,
+        (m) => `${m.tag} • Lluvia: ${m.lluviaProb}% | ${consejoTexto}`
       );
     }
 
     const schedule = getUserSchedule();
     if (schedule) {
       verificarDisparoWebNotif(schedule.morningTime, "morning",
-        (w, t) => `🌅 Kumo • Briefing Mañana (${t})`,
-        (w) => `${w.icono} Previsión y vestimenta para la mañana.`
+        (m) => `🌅 Kumo • Mañana: ${m.tempManana}°C (Mín ${m.tempMin}° / Máx ${m.tempMax}°)`,
+        (m) => `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaManana}%. Previsión y vestimenta.`
       );
       verificarDisparoWebNotif(schedule.afternoonTime, "afternoon",
-        (w, t) => `☀️ Kumo • Briefing Tarde`,
-        (w) => `${w.icono} Actualización meteorológica y vial para la tarde.`
+        (m) => `☀️ Kumo • Tarde: ${m.tempTarde}°C (Máx ${m.tempMax}°C)`,
+        (m) => `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaTarde}%. Tráfico y temperatura.`
       );
       verificarDisparoWebNotif(schedule.nightTime, "night",
-        (w, t) => `🌙 Kumo • Briefing Noche`,
-        (w) => `${w.icono} Previsión nocturna y resumen de temperaturas.`
+        (m) => `🌙 Kumo • Noche: ${m.tempNoche}°C (Mín ${m.tempMin}°C)`,
+        (m) => `🌙 Noche a ${m.tempNoche}°C • Viento ${m.vientoMax} km/h. Resumen del día.`
       );
     }
   }, 30000); // Comprueba cada 30 segundos
