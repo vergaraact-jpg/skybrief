@@ -46,6 +46,33 @@ async function callGemini(prompt) {
   throw lastErr || new Error("No se pudo obtener respuesta de ningún modelo de Gemini");
 }
 
+function analizarCambioIntradia(hourlyData) {
+  if (!hourlyData || !hourlyData.temperature_2m) return { aviso: null };
+
+  const tempManana = Math.round(hourlyData.temperature_2m[10] ?? 15);
+  const tempTarde = Math.round(hourlyData.temperature_2m[19] ?? 15);
+  const lluviaManana = hourlyData.precipitation_probability?.[10] ?? 0;
+  const lluviaTarde = hourlyData.precipitation_probability?.[19] ?? 0;
+
+  const difTemp = Math.round(tempTarde - tempManana);
+  let avisoIntradia = null;
+
+  if (difTemp <= -7) {
+    avisoIntradia = `Desplome térmico: Caerán ${Math.abs(difTemp)}°C por la tarde (${tempTarde}°C).`;
+  } else if (difTemp >= 8) {
+    avisoIntradia = `Amplitud térmica: De ${tempManana}°C a ${tempTarde}°C por la tarde. Viste en capas.`;
+  } else if (lluviaManana < 20 && lluviaTarde >= 50) {
+    avisoIntradia = `Lluvia prevista por la tarde (${lluviaTarde}% prob.). Lleva paraguas.`;
+  }
+
+  return {
+    tempManana,
+    tempTarde,
+    difTemp,
+    aviso: avisoIntradia
+  };
+}
+
 async function run() {
   if (!GEMINI_API_KEY) throw new Error("Falta GEMINI_API_KEY");
   if (!NTFY_TOPIC) throw new Error("Falta NTFY_TOPIC");
@@ -61,17 +88,19 @@ async function run() {
   const lluviaProb = wData.daily.precipitation_probability_max[0];
   const vientoMax = Math.round(wData.daily.windspeed_10m_max[0]);
   const weatherCode = wData.current_weather.weathercode;
+  const intradia = analizarCambioIntradia(wData.hourly);
 
-  // 2. Prompt enfocado en Clima general + Módulo Coche/Tráfico
+  // 2. Prompt enfocado en Clima general + Módulo Coche/Tráfico + Intradía
   const prompt = `Actúa como asesor meteorológico y vial para Madrid.
 Datos de hoy:
 - Temperatura actual: ${tempActual}°C (Mín: ${tempMin}°C)
+- Análisis intradía (10h vs 19h): ${intradia.aviso || "Sin cambios bruscos"}
 - Probabilidad de lluvia: ${lluviaProb}%
 - Viento máx: ${vientoMax} km/h
 - Código WMO: ${weatherCode}
 
 Devuelve EXACTAMENTE dos líneas cortas (máximo 120 caracteres en total):
-Línea 1: Ropa recomendada y sensación térmica.
+Línea 1: Ropa recomendada y sensación térmica (incluye aviso si hay cambio brusco intradía).
 Línea 2: [Coche & Vía]: Estado del vehículo (parabrisas/hielo si hace frío) y recomendación de conducción (adherencia, visibilidad o viento).`;
 
   let mensaje;
@@ -79,7 +108,8 @@ Línea 2: [Coche & Vía]: Estado del vehículo (parabrisas/hielo si hace frío) 
     mensaje = await callGemini(prompt);
   } catch (err) {
     console.warn("Fallo en Gemini, generando mensaje nativo de respaldo:", err.message);
-    const ropa = tempActual > 22 ? "Ropa fresca y ligera." : tempActual < 12 ? "Abrigo y chaqueta cortavientos." : "Ropa de entretiempo.";
+    let ropa = tempActual > 22 ? "Ropa fresca y ligera." : tempActual < 12 ? "Abrigo y chaqueta cortavientos." : "Ropa de entretiempo.";
+    if (intradia.aviso) ropa += ` ${intradia.aviso}`;
     const via = lluviaProb > 40 ? "[Coche & Vía]: Calzada húmeda, aumenta distancia de frenado." : tempMin <= 3 ? "[Coche & Vía]: Revisa escarcha en lunas y batería." : "[Coche & Vía]: Asfalto seco y buena adherencia.";
     mensaje = `${ropa}\n${via}`;
   }

@@ -226,13 +226,52 @@ function inicializarMapa(lat, lon) {
 }
 
 // ==========================================
-// 5. MOTORES DE ANÁLISIS (HÍBRIDO)
+// 5. MOTORES DE ANÁLISIS (HÍBRIDO) Y PREDICCIÓN INTRADÍA
 // ==========================================
+function analizarCambioIntradia(hourlyData, schedule) {
+  if (!hourlyData || !hourlyData.temperature_2m) {
+    return { tempManana: null, tempTarde: null, difTemp: 0, aviso: null };
+  }
+
+  // Índices de referencia del día actual: 10:00 AM y 19:00 PM
+  const horaManana = schedule?.morning ?? 10;
+  const horaTarde = schedule?.afternoon ? Math.max(schedule.afternoon, 19) : 19;
+
+  const tempManana = Math.round(hourlyData.temperature_2m[horaManana] ?? hourlyData.temperature_2m[10] ?? 15);
+  const tempTarde = Math.round(hourlyData.temperature_2m[horaTarde] ?? hourlyData.temperature_2m[19] ?? tempManana);
+  const lluviaManana = hourlyData.precipitation_probability?.[horaManana] ?? hourlyData.precipitation_probability?.[10] ?? 0;
+  const lluviaTarde = hourlyData.precipitation_probability?.[horaTarde] ?? hourlyData.precipitation_probability?.[19] ?? 0;
+
+  const difTemp = Math.round(tempTarde - tempManana);
+  let avisoIntradia = null;
+
+  // Caída brusca de temperatura por la tarde
+  if (difTemp <= -7) {
+    avisoIntradia = `Desplome térmico: Caerán ${Math.abs(difTemp)}°C hacia la tarde (${tempTarde}°C). Lleva una capa extra.`;
+  }
+  // Subida drástica de temperatura
+  else if (difTemp >= 8) {
+    avisoIntradia = `Amplitud térmica alta: De ${tempManana}°C por la mañana a ${tempTarde}°C por la tarde. Viste en capas fácilmente removibles.`;
+  }
+  // Mañana seca pero tarde con lluvia
+  else if (lluviaManana < 20 && lluviaTarde >= 50) {
+    avisoIntradia = `Cambio de tiempo: La mañana será seca, pero la lluvia entrará sobre las ${horaTarde}:00 (${lluviaTarde}% prob.). No olvides el paraguas.`;
+  }
+
+  return {
+    tempManana,
+    tempTarde,
+    difTemp,
+    aviso: avisoIntradia
+  };
+}
+
 function motorNativo(clima, transporte, schedule) {
   const temp = Math.round(clima.current?.temperature_2m ?? clima.current_weather?.temperature ?? 20);
   const probLluvia = clima.daily?.precipitation_probability_max?.[0] ?? 0;
   const viento = Math.round(clima.current?.wind_speed_10m ?? clima.current_weather?.windspeed ?? 10);
   const uv = clima.daily?.uv_index_max?.[0] ?? 0;
+  const intradia = clima.hourly ? analizarCambioIntradia(clima.hourly, schedule) : { aviso: null };
 
   let items = [];
   let consejo = "Tiempo agradable. Ropa cómoda y ligera.";
@@ -252,14 +291,18 @@ function motorNativo(clima, transporte, schedule) {
     items.push("Prenda principal", "Calzado cómodo");
   }
 
-  if (probLluvia > 40) {
+  if (intradia.aviso) {
+    consejo = intradia.aviso;
+    if (intradia.difTemp <= -7 || intradia.difTemp >= 8) items.push("Capa de ropa extra");
+    if (intradia.aviso.includes("paraguas")) items.push("Paraguas compacto");
+  } else if (probLluvia > 40) {
     consejo += " Probabilidad de precipitaciones.";
     items.push(transporte === "coche" ? "Líquido limpiaparabrisas" : "Paraguas compacto");
   }
 
   if (uv >= 6) items.push("Protector solar");
 
-  return { temp: `${temp}°C`, consejo, items, paleta };
+  return { temp: `${temp}°C`, consejo, items, paleta, intradia };
 }
 
 // Extractor de JSON universal y seguro
@@ -407,12 +450,15 @@ async function motorGemini(clima, transporte, city, apiKey, schedule) {
     ? Math.round(clima.hourly.temperature_2m[schedule.night]) 
     : minTemp;
 
+  const intradia = clima.hourly ? analizarCambioIntradia(clima.hourly, schedule) : { aviso: null };
+
   const prompt = `Analiza estos datos meteorológicos de ${city}:
 - Temp actual: ${currentTemp}°C (Máx: ${maxTemp}°C, Mín: ${minTemp}°C)
 - Tramos del día elegidos por el usuario:
   * Mañana (${schedule.morning}:00): ${tempManana}°C
   * Tarde (${schedule.afternoon}:00): ${tempTarde}°C
   * Noche (${schedule.night}:00): ${tempNoche}°C
+- Análisis intradía: ${intradia.aviso || "Sin saltos bruscos térmicos ni de precipitación"}
 - Prob. lluvia: ${probLluvia}%
 - UV: ${uv}
 - Viento: ${viento} km/h
