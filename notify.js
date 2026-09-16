@@ -50,8 +50,8 @@ async function run() {
   if (!GEMINI_API_KEY) throw new Error("Falta GEMINI_API_KEY");
   if (!NTFY_TOPIC) throw new Error("Falta NTFY_TOPIC");
 
-  // 1. Obtener métricas ampliadas de Open-Meteo
-  const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max&current_weather=true&timezone=auto`;
+  // 1. Obtener métricas ampliadas de Open-Meteo (incluye hourly para análisis intradía)
+  const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=temperature_2m,precipitation_probability,weathercode&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max&current_weather=true&timezone=auto`;
   const wRes = await fetch(weatherUrl);
   if (!wRes.ok) throw new Error(`Fallo Open-Meteo: ${wRes.status}`);
   const wData = await wRes.json();
