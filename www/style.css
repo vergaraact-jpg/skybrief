@@ -300,47 +300,31 @@ h1 { font-size: 1.9rem; font-weight: 700; margin-top: 0.2rem; }
   width: 100%;
 }
 
-/* Módulo de Predicción Intradía */
 .intraday-container {
-  background: linear-gradient(135deg, rgba(30, 27, 75, 0.7), rgba(23, 37, 84, 0.7));
-  border: 1px solid #3b82f6;
-  border-left: 4px solid #60a5fa;
-  border-radius: 12px;
-  padding: 0.8rem 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  animation: fadeInIntraday 0.3s ease-in-out;
+  margin-top: 14px;
+  background: rgba(30, 41, 59, 0.7);
+  border-left: 4px solid #38bdf8;
+  padding: 10px 14px;
+  border-radius: 8px;
 }
 
 .intraday-container.hidden {
-  display: none !important;
-}
-
-@keyframes fadeInIntraday {
-  from { opacity: 0; transform: translateY(-3px); }
-  to { opacity: 1; transform: translateY(0); }
+  display: none;
 }
 
 .intraday-badge {
-  display: inline-block;
-  align-self: flex-start;
-  font-size: 0.65rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  color: #93c5fd;
-  text-transform: uppercase;
-  background: rgba(59, 130, 246, 0.2);
-  padding: 0.15rem 0.45rem;
-  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #38bdf8;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
 }
 
 .intraday-message {
-  font-size: 0.83rem;
-  color: #f1f5f9;
-  line-height: 1.35;
+  font-size: 0.88rem;
+  color: #e2e8f0;
   margin: 0;
-  font-weight: 500;
+  line-height: 1.4;
 }
 
 /* Tarjeta de Modo Conducción / Coche */
