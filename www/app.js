@@ -2,6 +2,12 @@
 // ESTADO GLOBAL
 // ==========================================
 const DEFAULT_COORDS = { lat: 40.4168, lon: -3.7038, city: "Madrid" };
+const DEFAULT_SCHEDULE = {
+  morning: 9,
+  afternoon: 15,
+  night: 21
+};
+
 let modoTransporte = "metro"; // 'metro' o 'coche'
 let datosMeteorologicos = null;
 let coordsActuales = { ...DEFAULT_COORDS };
@@ -94,7 +100,53 @@ btnRefresh.addEventListener("click", () => {
 });
 
 // ==========================================
-// 2. APIS EXTERNAS: CLIMA, AIRE Y UBICACIÓN
+// 2. CONFIGURACIÓN HORARIA DINÁMICA
+// ==========================================
+function getUserSchedule() {
+  const saved = localStorage.getItem("skybrief_user_schedule");
+  if (!saved) return DEFAULT_SCHEDULE;
+  try {
+    return JSON.parse(saved);
+  } catch (e) {
+    return DEFAULT_SCHEDULE;
+  }
+}
+
+function initScheduleInputs() {
+  const schedule = getUserSchedule();
+  const mInput = document.getElementById("time-morning");
+  const aInput = document.getElementById("time-afternoon");
+  const nInput = document.getElementById("time-night");
+
+  if (mInput) mInput.value = `${String(schedule.morning).padStart(2, "0")}:00`;
+  if (aInput) aInput.value = `${String(schedule.afternoon).padStart(2, "0")}:00`;
+  if (nInput) nInput.value = `${String(schedule.night).padStart(2, "0")}:00`;
+
+  const btnSave = document.getElementById("btn-save-schedule");
+  if (btnSave) {
+    btnSave.addEventListener("click", () => {
+      const updatedSchedule = {
+        morning: parseInt(mInput?.value.split(":")[0], 10) || DEFAULT_SCHEDULE.morning,
+        afternoon: parseInt(aInput?.value.split(":")[0], 10) || DEFAULT_SCHEDULE.afternoon,
+        night: parseInt(nInput?.value.split(":")[0], 10) || DEFAULT_SCHEDULE.night
+      };
+      localStorage.setItem("skybrief_user_schedule", JSON.stringify(updatedSchedule));
+      
+      const scheduleStatus = document.getElementById("schedule-status");
+      if (scheduleStatus) {
+        scheduleStatus.textContent = "✓ Horarios guardados correctamente.";
+        scheduleStatus.style.color = "#38bdf8";
+        setTimeout(() => { scheduleStatus.textContent = ""; }, 3000);
+      }
+      
+      alert("Horarios guardados correctamente.");
+      procesarReporteCompleto();
+    });
+  }
+}
+
+// ==========================================
+// 3. APIS EXTERNAS: CLIMA, AIRE Y UBICACIÓN
 // ==========================================
 async function obtenerUbicacion() {
   return new Promise((resolve) => {
@@ -129,9 +181,9 @@ async function obtenerUbicacion() {
   });
 }
 
-// Endpoint actualizado con current=temperature_2m,relative_humidity_2m,wind_speed_10m
+// Endpoint con current, hourly y daily
 async function getWeatherData(lat = 40.4168, lon = -3.7038) {
-  const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,is_day,precipitation,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max&timezone=auto`;
+  const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,is_day,precipitation,wind_speed_10m&hourly=temperature_2m,precipitation_probability&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max&timezone=auto`;
   const airUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5`;
 
   const [resClima, resAire] = await Promise.all([
@@ -146,7 +198,7 @@ async function getWeatherData(lat = 40.4168, lon = -3.7038) {
 }
 
 // ==========================================
-// 3. MAPA EN VIVO (LEAFLET)
+// 4. MAPA EN VIVO (LEAFLET)
 // ==========================================
 function inicializarMapa(lat, lon) {
   if (!mapa) {
@@ -162,9 +214,9 @@ function inicializarMapa(lat, lon) {
 }
 
 // ==========================================
-// 4. MOTORES DE ANÁLISIS (HÍBRIDO)
+// 5. MOTORES DE ANÁLISIS (HÍBRIDO)
 // ==========================================
-function motorNativo(clima, transporte) {
+function motorNativo(clima, transporte, schedule) {
   const temp = Math.round(clima.current?.temperature_2m ?? clima.current_weather?.temperature ?? 20);
   const probLluvia = clima.daily?.precipitation_probability_max?.[0] ?? 0;
   const viento = Math.round(clima.current?.wind_speed_10m ?? clima.current_weather?.windspeed ?? 10);
@@ -324,16 +376,31 @@ async function callGeminiAutoDetect(apiKey, promptText) {
   throw new Error(`Ningún modelo respondió. ${lastError?.message || "Comprueba tu clave o conexión."}`);
 }
 
-async function motorGemini(clima, transporte, city, apiKey) {
-  const temp = Math.round(clima.current?.temperature_2m ?? clima.current_weather?.temperature ?? 20);
-  const maxTemp = clima.daily?.temperature_2m_max?.[0] ?? temp;
-  const minTemp = clima.daily?.temperature_2m_min?.[0] ?? temp;
+async function motorGemini(clima, transporte, city, apiKey, schedule) {
+  const currentTemp = Math.round(clima.current?.temperature_2m ?? clima.current_weather?.temperature ?? 20);
+  const maxTemp = clima.daily?.temperature_2m_max?.[0] ?? currentTemp;
+  const minTemp = clima.daily?.temperature_2m_min?.[0] ?? currentTemp;
   const probLluvia = clima.daily?.precipitation_probability_max?.[0] ?? 0;
   const uv = clima.daily?.uv_index_max?.[0] ?? 0;
   const viento = Math.round(clima.current?.wind_speed_10m ?? clima.current_weather?.windspeed ?? 10);
 
+  // Extraer temperaturas horarias específicas de los tramos elegidos
+  const tempManana = clima.hourly?.temperature_2m?.[schedule.morning] !== undefined 
+    ? Math.round(clima.hourly.temperature_2m[schedule.morning]) 
+    : currentTemp;
+  const tempTarde = clima.hourly?.temperature_2m?.[schedule.afternoon] !== undefined 
+    ? Math.round(clima.hourly.temperature_2m[schedule.afternoon]) 
+    : maxTemp;
+  const tempNoche = clima.hourly?.temperature_2m?.[schedule.night] !== undefined 
+    ? Math.round(clima.hourly.temperature_2m[schedule.night]) 
+    : minTemp;
+
   const prompt = `Analiza estos datos meteorológicos de ${city}:
-- Temp actual: ${temp}°C (Máx: ${maxTemp}°C, Mín: ${minTemp}°C)
+- Temp actual: ${currentTemp}°C (Máx: ${maxTemp}°C, Mín: ${minTemp}°C)
+- Tramos del día elegidos por el usuario:
+  * Mañana (${schedule.morning}:00): ${tempManana}°C
+  * Tarde (${schedule.afternoon}:00): ${tempTarde}°C
+  * Noche (${schedule.night}:00): ${tempNoche}°C
 - Prob. lluvia: ${probLluvia}%
 - UV: ${uv}
 - Viento: ${viento} km/h
@@ -341,8 +408,8 @@ async function motorGemini(clima, transporte, city, apiKey) {
 
 Responde exclusivamente con un JSON válido con este formato:
 {
-  "temp": "${temp}°C",
-  "consejo": "Consejo directo de ropa y trayecto en ${transporte} (máx 15 palabras)",
+  "temp": "${currentTemp}°C",
+  "consejo": "Consejo directo de ropa y trayecto en ${transporte} adaptado al día (máx 15 palabras)",
   "items": ["Prenda 1", "Accesorio 2", "Accesorio 3"],
   "paleta": ["#HEX1", "#HEX2", "#HEX3"]
 }`;
@@ -351,7 +418,7 @@ Responde exclusivamente con un JSON válido con este formato:
   const cleanJson = extractJsonFromText(raw);
   
   return {
-    temp: cleanJson.temp || `${temp}°C`,
+    temp: cleanJson.temp || `${currentTemp}°C`,
     consejo: cleanJson.consejo || cleanJson.advice || "Día estable.",
     items: cleanJson.items || cleanJson.que_llevar || cleanJson.queLlevar || ["Ropa cómoda"],
     paleta: cleanJson.paleta || cleanJson.paleta_luz || cleanJson.palette || ["#38BDF8", "#94A3B8", "#0F172A"],
@@ -360,13 +427,14 @@ Responde exclusivamente con un JSON válido con este formato:
 }
 
 // ==========================================
-// 5. ORQUESTADOR Y RENDERIZADO
+// 6. ORQUESTADOR Y RENDERIZADO
 // ==========================================
 async function procesarReporteCompleto() {
   if (!datosMeteorologicos) return;
 
   const { clima, aire } = datosMeteorologicos;
   const apiKey = localStorage.getItem("gemini_key");
+  const schedule = getUserSchedule();
 
   // Calidad del aire
   if (aire && aire.current && aire.current.pm2_5 !== undefined) {
@@ -401,22 +469,21 @@ async function procesarReporteCompleto() {
 
   if (apiKey) {
     try {
-      keyStatus.textContent = "● Detectando modelos activos en tu cuenta...";
+      keyStatus.textContent = "● Analizando clima y tramos con IA...";
       keyStatus.style.color = "#38bdf8";
 
-      resultado = await motorGemini(clima, modoTransporte, coordsActuales.city, apiKey);
+      resultado = await motorGemini(clima, modoTransporte, coordsActuales.city, apiKey, schedule);
       const mod = resultado.modeloUsado || "Gemini";
       keyStatus.textContent = `● Modo Pro Activo (${mod})`;
       keyStatus.style.color = "#38bdf8";
     } catch (e) {
       console.warn("Fallo en Gemini, aplicando motor nativo:", e);
-      resultado = motorNativo(clima, modoTransporte);
+      resultado = motorNativo(clima, modoTransporte, schedule);
       keyStatus.textContent = `Aviso: ${e.message}`;
       keyStatus.style.color = "#f59e0b";
-      alert(`Aviso de IA: ${e.message}`);
     }
   } else {
-    resultado = motorNativo(clima, modoTransporte);
+    resultado = motorNativo(clima, modoTransporte, schedule);
     keyStatus.textContent = "Modo Básico Activo (Sin IA)";
     keyStatus.style.color = "#94a3b8";
   }
@@ -436,6 +503,7 @@ async function iniciarApp() {
   cityTitle.textContent = coordsActuales.city;
 
   inicializarMapa(coordsActuales.lat, coordsActuales.lon);
+  initScheduleInputs();
 
   try {
     datosMeteorologicos = await getWeatherData(coordsActuales.lat, coordsActuales.lon);
@@ -449,7 +517,7 @@ async function iniciarApp() {
 window.addEventListener("DOMContentLoaded", iniciarApp);
 
 // ==========================================
-// 6. GESTIÓN DE NOTIFICACIÓN MATUTINA (CONTROL ÚNICO DIARIO)
+// 7. GESTIÓN DE NOTIFICACIÓN MATUTINA (CONTROL ÚNICO DIARIO)
 // ==========================================
 const notifyTimeInput = document.getElementById("notify-time");
 const btnSetAlert = document.getElementById("btn-set-alert");
@@ -470,7 +538,6 @@ function shouldTriggerNotification(targetTimeStr) {
   const currentHours = now.getHours();
   const currentMinutes = now.getMinutes();
 
-  // Comprueba si coincide con la hora objetivo exacta
   if (currentHours === targetHours && currentMinutes === targetMinutes) {
     localStorage.setItem("skybrief_last_notification", todayKey);
     return true;
@@ -501,17 +568,14 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
     const fechaDisparo = new Date();
     fechaDisparo.setHours(horas, minutos, 0, 0);
 
-    // Si la hora ya pasó hoy, programar para mañana
     if (fechaDisparo <= new Date()) {
       fechaDisparo.setDate(fechaDisparo.getDate() + 1);
     }
 
-    // Cancelar cualquier aviso anterior para evitar duplicados o spam
     try {
       await LocalNotifications.cancel({ notifications: [{ id: 101 }] });
     } catch (e) {}
 
-    // Programar la alarma nativa del sistema operativo
     await LocalNotifications.schedule({
       notifications: [
         {
@@ -565,45 +629,3 @@ if (btnSetAlert) {
     programarAlarmaMatutina(hora, consejoTexto, tempTexto);
   });
 }
-
-// ==========================================
-// 7. CONFIGURACIÓN HORARIA DEL BRIEFING (MAÑANA, TARDE, NOCHE)
-// ==========================================
-const timeMorningInput = document.getElementById("time-morning");
-const timeAfternoonInput = document.getElementById("time-afternoon");
-const timeNightInput = document.getElementById("time-night");
-const btnSaveSchedule = document.getElementById("btn-save-schedule");
-const scheduleStatus = document.getElementById("schedule-status");
-
-function cargarHorariosConfigurados() {
-  const defaults = { morning: "09:00", afternoon: "15:00", night: "21:00" };
-  const guardado = JSON.parse(localStorage.getItem("skybrief_schedule") || "null") || defaults;
-
-  if (timeMorningInput) timeMorningInput.value = guardado.morning || defaults.morning;
-  if (timeAfternoonInput) timeAfternoonInput.value = guardado.afternoon || defaults.afternoon;
-  if (timeNightInput) timeNightInput.value = guardado.night || defaults.night;
-}
-
-cargarHorariosConfigurados();
-
-if (btnSaveSchedule) {
-  btnSaveSchedule.addEventListener("click", () => {
-    const preferencias = {
-      morning: timeMorningInput?.value || "09:00",
-      afternoon: timeAfternoonInput?.value || "15:00",
-      night: timeNightInput?.value || "21:00"
-    };
-
-    localStorage.setItem("skybrief_schedule", JSON.stringify(preferencias));
-    
-    if (scheduleStatus) {
-      scheduleStatus.textContent = "✓ Preferencias horarias guardadas.";
-      scheduleStatus.style.color = "#38bdf8";
-      setTimeout(() => {
-        scheduleStatus.textContent = "";
-      }, 3000);
-    }
-  });
-}
-
-
