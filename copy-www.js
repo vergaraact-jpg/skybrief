@@ -32,4 +32,18 @@ if (fs.existsSync(iconsDir)) {
   fs.cpSync(iconsDir, wwwIconsDir, { recursive: true });
 }
 
+// Sincronizar avatar Kumo a Android res/drawable para notificaciones nativas
+const kumoAvatarSrc = path.join(iconsDir, 'kumo-avatar.png');
+const androidResDir = path.join(__dirname, 'android', 'app', 'src', 'main', 'res');
+if (fs.existsSync(kumoAvatarSrc) && fs.existsSync(androidResDir)) {
+  const targetDirs = ['drawable', 'mipmap-hdpi', 'mipmap-mdpi', 'mipmap-xhdpi', 'mipmap-xxhdpi', 'mipmap-xxxhdpi'];
+  targetDirs.forEach(dirName => {
+    const dirPath = path.join(androidResDir, dirName);
+    if (fs.existsSync(dirPath)) {
+      fs.copyFileSync(kumoAvatarSrc, path.join(dirPath, 'kumo_avatar.png'));
+    }
+  });
+}
+
 console.log('✓ www directory synced successfully');
+

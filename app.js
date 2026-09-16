@@ -989,7 +989,8 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
           },
           sound: "beep.wav",
           iconColor: weatherInfo.color,
-          smallIcon: "ic_stat_name"
+          smallIcon: "ic_stat_name",
+          largeIcon: "kumo_avatar"
         }
       ]
     });
@@ -1036,9 +1037,10 @@ function iniciarLoopNotificacionWeb() {
       const consejoTexto = document.getElementById("alert-text")?.textContent || "";
       const tempTexto = document.getElementById("temp-display")?.textContent || "--°C";
 
-      new Notification(`SkyBrief • ${weatherInfo.tag} (${tempTexto})`, {
+      new Notification(`Kumo • ${weatherInfo.tag} (${tempTexto})`, {
         body: `${weatherInfo.icono} ${consejoTexto}`,
-        icon: weatherInfo.iconFile
+        icon: "icons/kumo-avatar.png",
+        badge: "icons/icon-192.png"
       });
     }
   }, 30000); // Comprueba cada 30 segundos

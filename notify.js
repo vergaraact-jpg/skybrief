@@ -196,7 +196,7 @@ Responde exclusivamente con el JSON estricto:`;
     iconUrl = "https://raw.githubusercontent.com/vergaraact-jpg/skybrief/main/icons/weather-heat.png";
   }
 
-  // 4. Envío a ntfy con Icono e Imagen adjunta
+  // 4. Envío a ntfy con Avatar de Kumo e Iconos contextuales
   const pushRes = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
     method: "POST",
     body: `${iconoClima} ${mensajeFinal}`,
@@ -204,7 +204,7 @@ Responde exclusivamente con el JSON estricto:`;
       "Title": `${iconoClima} Kumo • ${titularFinal}`,
       "Priority": lluviaProb > 60 || tempMin <= 2 ? "high" : "default",
       "Tags": tag,
-      "Icon": iconUrl
+      "Icon": "https://raw.githubusercontent.com/vergaraact-jpg/skybrief/main/icons/kumo-avatar.png"
     }
   });
 
