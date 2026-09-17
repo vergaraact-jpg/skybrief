@@ -57,16 +57,16 @@ jobs:
       - name: Publicar Release directa en GitHub
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: "SkyBrief para Android v1.0.0"
+          tag_name: v1.1.0
+          name: "SkyBrief para Android v1.1.0"
           body: |
-            ### 📱 SkyBrief - App Nativa para Android
+            ### 📱 SkyBrief - App Nativa para Android v1.1.0
             Descarga e instala directamente el archivo `.apk` en tu móvil.
             
-            - ✨ Clima en tiempo real y calidad del aire.
-            - 🚶/🚗 Selector de movilidad y estilismo diario.
-            - 🗺️ Mapa interactivo Leaflet.
-            - ⏰ Alarma matutina con notificaciones nativas en segundo plano.
+            - 🌟 Clave de firma permanente (actualizaciones directas sin desinstalar).
+            - ⏰ 3 Avisos diarios con persistencia total (Mañana, Tarde, Noche).
+            - 🌡️ Notificaciones con temperaturas exactas, mín/máx y avatar de Kumo.
+            - 🚗 Copiloto vial y diseño 100% responsivo.
           files: ./SkyBrief.apk
           draft: false
           prerelease: false
