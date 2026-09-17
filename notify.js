@@ -9,13 +9,13 @@ const LON = -3.7038;
 const CANDIDATE_MODELS = [
   "gemini-2.0-flash",
   "gemini-1.5-flash",
-  "gemini-3.6-flash",
   "gemini-2.0-flash-lite",
   "gemini-1.5-pro",
   "gemini-pro"
 ];
 
 async function callGemini(prompt) {
+  if (!GEMINI_API_KEY) return null;
   let lastErr = null;
   for (const model of CANDIDATE_MODELS) {
     try {
@@ -99,8 +99,12 @@ function extractJsonFromText(rawText) {
 }
 
 async function run() {
-  if (!GEMINI_API_KEY) throw new Error("Falta GEMINI_API_KEY");
-  if (!NTFY_TOPIC) throw new Error("Falta NTFY_TOPIC");
+  if (!NTFY_TOPIC) {
+    console.warn("⚠️ AVISO: La variable de entorno NTFY_TOPIC no está configurada en los Secrets de GitHub Actions.");
+    console.warn("👉 Para activarla: ve a GitHub > Settings > Secrets and variables > Actions > New repository secret, y crea 'NTFY_TOPIC' con tu canal.");
+    console.log("Ejecución finalizada con diagnóstico exitoso.");
+    return;
+  }
 
   // 1. Obtener métricas ampliadas de Open-Meteo (incluye hourly para análisis intradía)
   const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=temperature_2m,precipitation_probability,weathercode&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max&current_weather=true&timezone=auto`;
@@ -126,7 +130,7 @@ Reglas estrictas de tono:
 3. Máximo 35 palabras en el mensaje.
 4. Formato JSON estricto:
 {
-  "titular": "Madrid a ${tempActual}°C: titular conciso e irónico o directo",
+  "titular": "Madrid a ${tempActual}°C (Mín ${tempMin}° / Máx ${tempMax}°): titular conciso e irónico o directo",
   "mensaje": "Mensaje directo con ropa y recomendación vial",
   "mood": "sol" | "lluvia" | "frio" | "viento" | "alerta" | "neutral"
 }`;
@@ -142,36 +146,45 @@ Datos meteorológicos de Madrid:
 
 Responde exclusivamente con el JSON estricto:`;
 
-  let titularFinal = `Madrid a ${tempActual}°C`;
+  let titularFinal = `Madrid a ${tempActual}°C (Mín ${tempMin}° / Máx ${tempMax}°)`;
   let mensajeFinal = "Tiempo agradable. Ropa cómoda y calzado ligero.";
   let moodDetectado = "neutral";
 
-  try {
-    const raw = await callGemini(prompt);
-    const parsed = extractJsonFromText(raw);
-    if (parsed && parsed.mensaje) {
-      titularFinal = parsed.titular || titularFinal;
-      mensajeFinal = parsed.mensaje;
-      moodDetectado = (parsed.mood || "neutral").toLowerCase();
-    } else if (raw) {
-      mensajeFinal = raw.replace(/[{}"]/g, "").trim();
+  if (GEMINI_API_KEY) {
+    try {
+      const raw = await callGemini(prompt);
+      const parsed = extractJsonFromText(raw);
+      if (parsed && parsed.mensaje) {
+        titularFinal = parsed.titular || titularFinal;
+        mensajeFinal = parsed.mensaje;
+        moodDetectado = (parsed.mood || "neutral").toLowerCase();
+      } else if (raw) {
+        mensajeFinal = raw.replace(/[{}"]/g, "").trim();
+      }
+    } catch (err) {
+      console.warn("Fallo en Gemini, generando mensaje nativo Kumo de respaldo:", err.message);
+      generarMensajeNativo();
     }
-  } catch (err) {
-    console.warn("Fallo en Gemini, generando mensaje nativo Kumo de respaldo:", err.message);
+  } else {
+    console.log("GEMINI_API_KEY no detectada en Secrets. Utilizando motor nativo Kumo.");
+    generarMensajeNativo();
+  }
+
+  function generarMensajeNativo() {
     if (lluviaProb >= 40) {
-      titularFinal = `Madrid a ${tempActual}°C: Lluvia a la vista`;
+      titularFinal = `Madrid a ${tempActual}°C (Mín ${tempMin}° / Máx ${tempMax}°): Lluvia a la vista`;
       mensajeFinal = `Luz difusa y asfalto mojado. Saca el paraguas, chubasquero y duplica la distancia en coche.${intradia.aviso ? " " + intradia.aviso : ""}`;
       moodDetectado = "lluvia";
     } else if (tempMin <= 4 || tempActual <= 5) {
-      titularFinal = `Madrid a ${tempActual}°C: Frío cortante`;
+      titularFinal = `Madrid a ${tempActual}°C (Mín ${tempMin}° / Máx ${tempMax}°): Frío cortante`;
       mensajeFinal = `Luz limpia pero aire helado. Abrigo cortavientos, calzado térmico y revisa escarcha en lunas.${intradia.aviso ? " " + intradia.aviso : ""}`;
       moodDetectado = "frio";
     } else if (tempActual >= 28 || tempMax >= 30) {
-      titularFinal = `Madrid a ${tempActual}°C: Sol de justicia`;
+      titularFinal = `Madrid a ${tempActual}°C (Mín ${tempMin}° / Máx ${tempMax}°): Sol de justicia`;
       mensajeFinal = "Luz dura y calor directo. Ropa fresca, hidratación y ventila el habitáculo antes de arrancar.";
       moodDetectado = "sol";
     } else {
-      titularFinal = `Madrid a ${tempActual}°C: Día templado`;
+      titularFinal = `Madrid a ${tempActual}°C (Mín ${tempMin}° / Máx ${tempMax}°): Día templado`;
       mensajeFinal = `Luz neutra y condiciones estables. Ropa cómoda de entretiempo y calzado ligero.${intradia.aviso ? " " + intradia.aviso : ""}`;
       moodDetectado = "neutral";
     }
@@ -196,12 +209,15 @@ Responde exclusivamente con el JSON estricto:`;
     iconUrl = "https://raw.githubusercontent.com/vergaraact-jpg/skybrief/main/icons/weather-heat.png";
   }
 
-  // 4. Envío a ntfy con Avatar de Kumo e Iconos contextuales
+  // 4. Envío a ntfy con Avatar de Kumo e Iconos contextuales (RFC 2047 UTF-8 safe)
+  const rawTitle = `${iconoClima} Kumo • ${titularFinal}`;
+  const encodedTitle = ` =?utf-8?B?${Buffer.from(rawTitle, "utf-8").toString("base64")}?=`.trim();
+
   const pushRes = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
     method: "POST",
     body: `${iconoClima} ${mensajeFinal}`,
     headers: {
-      "Title": `${iconoClima} Kumo • ${titularFinal}`,
+      "Title": encodedTitle,
       "Priority": lluviaProb > 60 || tempMin <= 2 ? "high" : "default",
       "Tags": tag,
       "Icon": "https://raw.githubusercontent.com/vergaraact-jpg/skybrief/main/icons/kumo-avatar.png"
