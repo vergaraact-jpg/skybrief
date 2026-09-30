@@ -87,6 +87,9 @@
             <div class="kumo-tag-row">
               <span class="kumo-tag">KUMO • COPILOTO</span>
               <span id="kumo-mood-tag" class="kumo-mood-pill">Directa & práctica</span>
+              <button id="btn-kumo-speak" class="kumo-speak-btn" type="button" title="Escuchar reporte de Kumo">
+                <span id="kumo-speak-icon">🔊</span> <span id="kumo-speak-text">Escuchar</span>
+              </button>
             </div>
             <h2 id="kumo-headline" class="kumo-headline">Cargando reporte...</h2>
           </div>
@@ -100,6 +103,20 @@
         <div class="intraday-badge">CAMBIO INTRADÍA</div>
         <p id="intraday-text" class="intraday-message"></p>
       </div>
+
+      <!-- Módulo Previsión por Horas (Próximas 24 horas) -->
+      <section class="section hourly-card">
+        <div class="hourly-header">
+          <div class="hourly-title-group">
+            <span class="hourly-icon-badge">🕒</span>
+            <h3>Previsión por Horas</h3>
+          </div>
+          <span class="hourly-subtitle">Próximas 24 horas</span>
+        </div>
+        <div id="hourly-timeline" class="hourly-scroll-container">
+          <div class="hourly-loading">Cargando horas...</div>
+        </div>
+      </section>
 
       <!-- Tarjeta en la interfaz (UI) Modo Conducción / Alerta de Trayecto -->
       <div id="car-module-card" class="car-card" style="display: none;">
@@ -191,6 +208,36 @@
           <button id="btn-set-alert" type="button" class="btn-secondary">Activar aviso</button>
         </div>
         <p id="notify-status" class="subtext-status"></p>
+
+        <!-- Configuración de Voz de Kumo (Opcional y no invasiva, desactivada por defecto) -->
+        <div class="voice-config-box">
+          <div class="voice-config-header">
+            <div class="voice-title-group">
+              <span class="voice-icon">🎙️</span>
+              <div class="voice-text-titles">
+                <strong>Lectura por voz matutina</strong>
+                <span class="voice-subtext">Kumo te leerá el reporte al sonar tu aviso</span>
+              </div>
+            </div>
+            <label class="toggle-switch" for="toggle-voice-briefing" title="Activar/desactivar lectura por voz">
+              <input type="checkbox" id="toggle-voice-briefing">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div id="voice-days-container" class="voice-days-container hidden">
+            <span class="days-label">Días en los que quieres que hable:</span>
+            <div class="days-grid" id="voice-days-grid">
+              <button type="button" class="day-btn active" data-day="1" title="Lunes">L</button>
+              <button type="button" class="day-btn active" data-day="2" title="Martes">M</button>
+              <button type="button" class="day-btn active" data-day="3" title="Miércoles">X</button>
+              <button type="button" class="day-btn active" data-day="4" title="Jueves">J</button>
+              <button type="button" class="day-btn active" data-day="5" title="Viernes">V</button>
+              <button type="button" class="day-btn" data-day="6" title="Sábado">S</button>
+              <button type="button" class="day-btn" data-day="0" title="Domingo">D</button>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- Modal o Sección de Configuración Horaria -->

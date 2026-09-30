@@ -914,12 +914,273 @@ async function procesarReporteCompleto() {
     if (carCard) carCard.style.display = "none";
   }
 
+  // Renderizar la previsión por horas para las próximas 24 horas
+  renderizarPrevisionHoraria(clima.hourly);
+
   // Comprobar alertas críticas (Sismos USGS y clima extremo)
   await verificarAlertasCriticas(clima);
 
   // Sincronizar avisos con los datos y temperaturas meteorológicas frescas
   await programarAvisosBriefing(schedule);
 }
+
+// ==========================================
+// 6. PREVISIÓN POR HORAS (24 HORAS)
+// ==========================================
+function getWmoHourlyInfo(code) {
+  if (code === 0) return { icon: "☀️", label: "Despejado" };
+  if (code === 1 || code === 2) return { icon: "🌤️", label: "Poco nuboso" };
+  if (code === 3) return { icon: "☁️", label: "Nublado" };
+  if (code === 45 || code === 48) return { icon: "🌫️", label: "Niebla" };
+  if (code >= 51 && code <= 55) return { icon: "🌦️", label: "Llovizna" };
+  if (code >= 61 && code <= 65) return { icon: "🌧️", label: "Lluvia" };
+  if (code >= 71 && code <= 77) return { icon: "❄️", label: "Nieve" };
+  if (code >= 80 && code <= 82) return { icon: "🌧️", label: "Chubascos" };
+  if (code >= 85 && code <= 86) return { icon: "🌨️", label: "Nevada" };
+  if (code >= 95 && code <= 99) return { icon: "⛈️", label: "Tormenta" };
+  return { icon: "⛅", label: "Variable" };
+}
+
+function renderizarPrevisionHoraria(hourlyData) {
+  const container = document.getElementById("hourly-timeline");
+  if (!container) return;
+
+  if (!hourlyData || !hourlyData.time || !hourlyData.temperature_2m) {
+    container.innerHTML = `<div class="hourly-loading">No hay datos horarios disponibles.</div>`;
+    return;
+  }
+
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentDate = now.getDate();
+
+  // Encontrar índice de la hora actual o la más próxima
+  let startIndex = 0;
+  for (let i = 0; i < hourlyData.time.length; i++) {
+    const entryDate = new Date(hourlyData.time[i]);
+    if (entryDate >= now || (entryDate.getDate() === currentDate && entryDate.getHours() === currentHour)) {
+      startIndex = i;
+      break;
+    }
+  }
+
+  const next24 = [];
+  const totalEntries = hourlyData.time.length;
+  const endIndex = Math.min(startIndex + 24, totalEntries);
+
+  for (let i = startIndex; i < endIndex; i++) {
+    const entryDate = new Date(hourlyData.time[i]);
+    const hourNum = entryDate.getHours();
+    const isNow = (i === startIndex);
+    const formattedHour = isNow ? "Ahora" : `${String(hourNum).padStart(2, "0")}:00`;
+    const temp = Math.round(hourlyData.temperature_2m[i] ?? 0);
+    const pop = hourlyData.precipitation_probability ? Math.round(hourlyData.precipitation_probability[i] ?? 0) : 0;
+    const code = hourlyData.weather_code ? hourlyData.weather_code[i] : 0;
+    const wmo = getWmoHourlyInfo(code);
+
+    next24.push(`
+      <div class="hourly-item ${isNow ? "now" : ""}">
+        <span class="hourly-time">${sanitizeHtml(formattedHour)}</span>
+        <span class="hourly-icon" title="${sanitizeHtml(wmo.label)}">${wmo.icon}</span>
+        <span class="hourly-temp">${temp}°</span>
+        ${pop > 0 
+          ? `<span class="hourly-pop">💧${pop}%</span>` 
+          : `<span class="hourly-pop" style="opacity:0; pointer-events:none;">-</span>`}
+      </div>
+    `);
+  }
+
+  container.innerHTML = next24.join("");
+}
+
+// ==========================================
+// 6.1 SISTEMA DE VOZ DE KUMO (TEXT-TO-SPEECH)
+// ==========================================
+let kumoSpeaking = false;
+
+function detenerKumoVoz() {
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+  }
+  kumoSpeaking = false;
+  const speakBtn = document.getElementById("btn-kumo-speak");
+  const speakIcon = document.getElementById("kumo-speak-icon");
+  const speakText = document.getElementById("kumo-speak-text");
+  if (speakBtn) speakBtn.classList.remove("speaking");
+  if (speakIcon) speakIcon.textContent = "🔊";
+  if (speakText) speakText.textContent = "Escuchar";
+}
+
+function generarTextoLecturaKumo() {
+  const greeting = getKumoGreeting();
+  const headline = document.getElementById("kumo-headline")?.textContent || "";
+  const advice = document.getElementById("alert-text")?.textContent || "";
+  const items = Array.from(document.querySelectorAll("#items-list .pill")).map(el => el.textContent.trim()).filter(Boolean).join(", ");
+  const intraday = document.getElementById("intraday-text")?.textContent || "";
+  const temp = document.getElementById("temp-display")?.textContent || "";
+
+  let texto = `${greeting}. `;
+  if (headline && !headline.toLowerCase().includes("cargando")) {
+    texto += `${headline}. `;
+  }
+  if (temp) {
+    texto += `Tenemos ${temp} en el exterior. `;
+  }
+  if (advice && !advice.toLowerCase().includes("consultando")) {
+    texto += `${advice}. `;
+  }
+  if (intraday) {
+    texto += `Nota de cambio: ${intraday}. `;
+  }
+  if (items) {
+    texto += `Te recomiendo llevar: ${items}. `;
+  }
+
+  return texto;
+}
+
+function hablarKumo(textoPersonalizado) {
+  if (!("speechSynthesis" in window)) {
+    alert("Tu dispositivo o navegador no admite lectura por voz nativa.");
+    return;
+  }
+
+  if (kumoSpeaking) {
+    detenerKumoVoz();
+    return;
+  }
+
+  detenerKumoVoz();
+
+  const texto = textoPersonalizado || generarTextoLecturaKumo();
+  if (!texto || !texto.trim()) return;
+
+  const utterance = new SpeechSynthesisUtterance(texto);
+  utterance.lang = "es-ES";
+  utterance.rate = 1.0;
+  utterance.pitch = 1.05;
+
+  const voices = window.speechSynthesis.getVoices();
+  const spanishVoice = voices.find(v => v.lang.startsWith("es") && (v.name.includes("Google") || v.name.includes("Natural") || v.name.includes("Neural"))) ||
+                       voices.find(v => v.lang.startsWith("es"));
+  if (spanishVoice) {
+    utterance.voice = spanishVoice;
+  }
+
+  const speakBtn = document.getElementById("btn-kumo-speak");
+  const speakIcon = document.getElementById("kumo-speak-icon");
+  const speakText = document.getElementById("kumo-speak-text");
+
+  utterance.onstart = () => {
+    kumoSpeaking = true;
+    if (speakBtn) speakBtn.classList.add("speaking");
+    if (speakIcon) speakIcon.textContent = "⏹️";
+    if (speakText) speakText.textContent = "Detener";
+  };
+
+  utterance.onend = () => {
+    detenerKumoVoz();
+  };
+
+  utterance.onerror = (e) => {
+    console.warn("SpeechSynthesis error:", e);
+    detenerKumoVoz();
+  };
+
+  window.speechSynthesis.speak(utterance);
+}
+
+const DEFAULT_VOICE_SETTINGS = {
+  enabled: false,
+  days: [1, 2, 3, 4, 5] // Lunes a Viernes por defecto
+};
+
+function getVoiceSettings() {
+  const saved = localStorage.getItem("skybrief_voice_settings");
+  if (!saved) return { ...DEFAULT_VOICE_SETTINGS };
+  try {
+    return JSON.parse(saved);
+  } catch (e) {
+    return { ...DEFAULT_VOICE_SETTINGS };
+  }
+}
+
+function saveVoiceSettings(settings) {
+  localStorage.setItem("skybrief_voice_settings", JSON.stringify(settings));
+}
+
+function initVoiceSettings() {
+  const toggle = document.getElementById("toggle-voice-briefing");
+  const daysContainer = document.getElementById("voice-days-container");
+  const dayButtons = document.querySelectorAll("#voice-days-grid .day-btn");
+  const speakBtn = document.getElementById("btn-kumo-speak");
+
+  const currentSettings = getVoiceSettings();
+
+  if (toggle) {
+    toggle.checked = !!currentSettings.enabled;
+    if (daysContainer) {
+      if (toggle.checked) {
+        daysContainer.classList.remove("hidden");
+      } else {
+        daysContainer.classList.add("hidden");
+      }
+    }
+
+    toggle.addEventListener("change", () => {
+      const settings = getVoiceSettings();
+      settings.enabled = toggle.checked;
+      saveVoiceSettings(settings);
+
+      if (daysContainer) {
+        if (toggle.checked) {
+          daysContainer.classList.remove("hidden");
+        } else {
+          daysContainer.classList.add("hidden");
+        }
+      }
+    });
+  }
+
+  dayButtons.forEach(btn => {
+    const day = parseInt(btn.getAttribute("data-day"), 10);
+    if (currentSettings.days.includes(day)) {
+      btn.classList.add("active");
+    } else {
+      btn.classList.remove("active");
+    }
+
+    btn.addEventListener("click", () => {
+      const settings = getVoiceSettings();
+      const idx = settings.days.indexOf(day);
+      if (idx > -1) {
+        settings.days.splice(idx, 1);
+        btn.classList.remove("active");
+      } else {
+        settings.days.push(day);
+        btn.classList.add("active");
+      }
+      saveVoiceSettings(settings);
+    });
+  });
+
+  if (speakBtn) {
+    speakBtn.addEventListener("click", () => {
+      if (kumoSpeaking) {
+        detenerKumoVoz();
+      } else {
+        hablarKumo();
+      }
+    });
+  }
+
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.onvoiceschanged = () => {
+      window.speechSynthesis.getVoices();
+    };
+  }
+}
+
 
 // ==========================================
 // 7.1 GESTOR DE ALERTAS CRÍTICAS (SISMOS Y CLIMA SEVERO)
@@ -1004,6 +1265,7 @@ async function verificarAlertasCriticas(weatherData) {
 
 async function iniciarApp() {
   initUserProfile();
+  initVoiceSettings();
   cityTitle.textContent = "Localizando...";
   coordsActuales = await obtenerUbicacion();
   cityTitle.textContent = coordsActuales.city;
@@ -1336,8 +1598,18 @@ function verificarDisparoWebNotif(timeStr, keySuffix, titleFn, bodyFn) {
       icon: "icons/kumo-avatar.png",
       badge: "icons/icon-192.png"
     });
+
+    // Si el usuario configuró lectura por voz para este día de la semana al llegar el aviso matutino
+    const voiceCfg = getVoiceSettings();
+    const currentDay = now.getDay(); // 0: Domingo, 1: Lunes, etc.
+    if (voiceCfg.enabled && voiceCfg.days.includes(currentDay) && keySuffix === "matutina") {
+      setTimeout(() => {
+        hablarKumo();
+      }, 1000);
+    }
   }
 }
+
 
 let webIntervalTimer = null;
 function iniciarLoopNotificacionWeb() {
