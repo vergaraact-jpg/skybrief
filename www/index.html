@@ -56,15 +56,10 @@
           <button id="btn-edit-user" class="user-greeting-pill" type="button" title="Cambiar tu nombre">
             <span id="header-user-greeting">👋 Hola</span> ✏️
           </button>
-          <div class="theme-selector-container">
-            <label for="theme-select" class="theme-label">Tema:</label>
-            <select id="theme-select" class="theme-dropdown">
-              <option value="dark">Oscuro</option>
-              <option value="light">Claro</option>
-              <option value="warm">Cálido</option>
-            </select>
+          <div class="header-actions">
+            <button id="btn-refresh-icon" class="icon-btn" type="button" title="Actualizar datos del tiempo">🔄</button>
+            <button id="btn-open-sidebar" class="icon-btn menu-btn" type="button" title="Abrir Menú y Ajustes">⚙️</button>
           </div>
-          <button id="btn-refresh-icon" class="icon-btn" title="Actualizar">⚙️</button>
         </div>
         <h1 id="city-title">Tu Ubicación</h1>
         <p id="temp-display" class="temp">--°C</p>
@@ -117,6 +112,18 @@
           <div class="hourly-loading">Cargando horas...</div>
         </div>
       </section>
+
+      <!-- Banner de Acceso a Modo Pro / Funciones IA -->
+      <div id="pro-feature-banner" class="pro-feature-banner" role="button" tabindex="0" title="Abrir Ajustes y Funciones Pro">
+        <div class="pro-banner-left">
+          <span class="pro-banner-sparkle">✨</span>
+          <div class="pro-banner-text">
+            <strong>¿Quieres funciones y análisis más detallados?</strong>
+            <span>Pulsa aquí para activar el Modo Pro IA y personalizar a Kumo</span>
+          </div>
+        </div>
+        <span class="pro-banner-arrow">➔</span>
+      </div>
 
       <!-- Tarjeta en la interfaz (UI) Modo Conducción / Alerta de Trayecto -->
       <div id="car-module-card" class="car-card" style="display: none;">
@@ -264,25 +271,6 @@
         <p id="schedule-status" class="subtext-status"></p>
       </section>
 
-      <!-- Activación de Modo Pro con Gemini -->
-      <section class="pro-card">
-        <div class="pro-header">
-          <h3>Modo Pro: Clave de Gemini</h3>
-          <span class="free-badge">GRATIS</span>
-        </div>
-        <p class="pro-description">
-          Para activar el análisis avanzado de movilidad y estilismo, conecta tu clave gratuita de Google. Tus datos nunca salen de tu navegador.
-        </p>
-        <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="btn-studio">
-          👉 Obtener API Key gratis en Google AI Studio
-        </a>
-        <div class="key-input-row">
-          <input type="password" id="api-key" placeholder="Pega tu clave AIzaSy...">
-          <button id="btn-save-key" type="button">Guardar Clave</button>
-        </div>
-        <p id="key-status" class="subtext-status"></p>
-      </section>
-
       <!-- Mapa de Tráfico y Movilidad -->
       <section class="section">
         <div class="map-header">
@@ -294,6 +282,169 @@
       </section>
     </main>
   </div>
+
+  <!-- Telón de fondo del Menú Lateral (Backdrop Overlay) -->
+  <div id="sidebar-overlay" class="sidebar-overlay hidden"></div>
+
+  <!-- Panel Lateral Deslizante (Sidebar Drawer) -->
+  <aside id="app-sidebar" class="app-sidebar hidden" aria-label="Menú y Ajustes">
+    <div class="sidebar-header">
+      <div class="sidebar-header-title">
+        <span class="sidebar-icon">⚙️</span>
+        <h3>Menú & Ajustes</h3>
+      </div>
+      <button id="btn-close-sidebar" class="sidebar-close-btn" type="button" aria-label="Cerrar menú">✕</button>
+    </div>
+
+    <div class="sidebar-content">
+      
+      <!-- 1. MODO PRO: INTELIGENCIA ARTIFICIAL (GEMINI) -->
+      <section class="sidebar-card pro-sidebar-card">
+        <div class="pro-header">
+          <div class="pro-title-group">
+            <span class="sparkle-icon">✨</span>
+            <h4>Modo Pro: Gemini IA</h4>
+          </div>
+          <span class="free-badge">GRATIS</span>
+        </div>
+        <p class="pro-description">
+          Conecta tu clave gratuita de Google para activar el análisis inteligente de movilidad, estilismo y modelos avanzados de IA.
+        </p>
+        <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="btn-studio">
+          👉 Obtener API Key gratis en Google AI Studio
+        </a>
+        <div class="key-input-row">
+          <input type="password" id="api-key" placeholder="Pega tu clave AIzaSy...">
+          <button id="btn-save-key" type="button">Guardar</button>
+        </div>
+        <p id="key-status" class="subtext-status">Modo Básico Activo (Sin IA)</p>
+      </section>
+
+      <!-- 2. PERSONALIDAD DE KUMO -->
+      <section class="sidebar-card">
+        <div class="sidebar-section-header">
+          <span class="section-icon">🎛️</span>
+          <h4>Personalidad de Kumo</h4>
+        </div>
+        <p class="sidebar-subtext">Elige el tono de respuesta de tu copiloto:</p>
+        <div class="personality-grid" id="kumo-personality-grid">
+          <button type="button" class="personality-btn active" data-personality="directa">
+            <span class="p-icon">⚡</span>
+            <div class="p-info">
+              <strong>Práctica & Directa</strong>
+              <small>Al grano y concisa</small>
+            </div>
+          </button>
+          <button type="button" class="personality-btn" data-personality="amigable">
+            <span class="p-icon">☕</span>
+            <div class="p-info">
+              <strong>Cálida & Amigable</strong>
+              <small>Cercana y motivadora</small>
+            </div>
+          </button>
+          <button type="button" class="personality-btn" data-personality="outfits">
+            <span class="p-icon">🧥</span>
+            <div class="p-info">
+              <strong>Estilo & Outfits</strong>
+              <small>Enfocada en capas y moda</small>
+            </div>
+          </button>
+        </div>
+      </section>
+
+      <!-- 3. PREFERENCIAS DE TRANSPORTE HABITUAL -->
+      <section class="sidebar-card">
+        <div class="sidebar-section-header">
+          <span class="section-icon">🚗</span>
+          <h4>Transporte Habitual</h4>
+        </div>
+        <p class="sidebar-subtext">Medio de transporte activo al abrir la app:</p>
+        <div class="transport-pref-grid" id="transport-pref-grid">
+          <button type="button" class="transport-pref-btn active" data-pref-mode="metro">
+            <span>🚶</span> A pie / Metro
+          </button>
+          <button type="button" class="transport-pref-btn" data-pref-mode="coche">
+            <span>🚗</span> Coche / Moto
+          </button>
+        </div>
+      </section>
+
+      <!-- 4. UNIDADES DE MEDIDA -->
+      <section class="sidebar-card">
+        <div class="sidebar-section-header">
+          <span class="section-icon">🌡️</span>
+          <h4>Unidades de Medida</h4>
+        </div>
+        <div class="units-grid">
+          <div class="unit-group">
+            <span class="unit-label">Temperatura:</span>
+            <div class="unit-toggle" id="unit-temp-toggle">
+              <button type="button" class="unit-btn active" data-unit="c">°C (Celsius)</button>
+              <button type="button" class="unit-btn" data-unit="f">°F (Fahrenheit)</button>
+            </div>
+          </div>
+          <div class="unit-group">
+            <span class="unit-label">Viento:</span>
+            <div class="unit-toggle" id="unit-wind-toggle">
+              <button type="button" class="unit-btn active" data-unit="kmh">km/h</button>
+              <button type="button" class="unit-btn" data-unit="mph">mph</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. APARIENCIA Y PERFIL -->
+      <section class="sidebar-card">
+        <div class="sidebar-section-header">
+          <span class="section-icon">🎨</span>
+          <h4>Apariencia & Perfil</h4>
+        </div>
+        <div class="sidebar-row">
+          <label for="theme-select" class="sidebar-label">Tema visual:</label>
+          <select id="theme-select" class="theme-dropdown">
+            <option value="dark">Oscuro 🌙</option>
+            <option value="light">Claro ☀️</option>
+            <option value="warm">Cálido 🌅</option>
+          </select>
+        </div>
+        <div class="sidebar-row">
+          <span class="sidebar-label">Tu nombre de usuario:</span>
+          <button id="btn-sidebar-edit-name" type="button" class="btn-link-action">Editar nombre ✏️</button>
+        </div>
+      </section>
+
+      <!-- 6. GUÍA DE NIVELES Y ALERTAS -->
+      <section class="sidebar-card">
+        <div class="sidebar-section-header">
+          <span class="section-icon">📖</span>
+          <h4>Guía de Alertas y Vías</h4>
+        </div>
+        <div class="alert-legend-list">
+          <div class="legend-item">
+            <span class="legend-badge badge-low">🟢 Vía Despejada</span>
+            <small>Asfalto seco, tracción 100% y visibilidad óptima.</small>
+          </div>
+          <div class="legend-item">
+            <span class="legend-badge badge-med">🟡 Precaución</span>
+            <small>Lluvia ligera o calzada húmeda. Aumenta distancia de seguridad.</small>
+          </div>
+          <div class="legend-item">
+            <span class="legend-badge badge-high">🔴 Alerta Crítica</span>
+            <small>Tormenta severa, granizo, rachas > 70 km/h o sismos recientes.</small>
+          </div>
+        </div>
+      </section>
+
+      <!-- 7. PRIVACIDAD Y DATOS -->
+      <section class="sidebar-card sidebar-footer-card">
+        <div class="privacy-badge">🔒 100% Local & Privado</div>
+        <p class="privacy-text">Tus claves, ubicación y horarios se procesan directamente en tu dispositivo.</p>
+        <button id="btn-reset-app-data" type="button" class="btn-danger-outline">Restablecer datos y caché</button>
+        <div class="app-version-tag">SkyBrief • Versión 1.1.0</div>
+      </section>
+
+    </div>
+  </aside>
 
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

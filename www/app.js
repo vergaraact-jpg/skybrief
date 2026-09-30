@@ -56,12 +56,50 @@ const btnWalk = document.getElementById("btn-transport-walk");
 const btnCar = document.getElementById("btn-transport-car");
 const btnRefresh = document.getElementById("btn-refresh-icon");
 
+// Helper de unidades de medida (Temperatura y Viento)
+function getUnits() {
+  return {
+    temp: localStorage.getItem("skybrief_unit_temp") || "c",
+    wind: localStorage.getItem("skybrief_unit_wind") || "kmh"
+  };
+}
+
+function formatTemp(celsius) {
+  if (celsius === null || celsius === undefined || isNaN(Number(celsius))) return "--°";
+  const units = getUnits();
+  if (units.temp === "f") {
+    const fahr = Math.round((Number(celsius) * 9) / 5 + 32);
+    return `${fahr}°F`;
+  }
+  return `${Math.round(Number(celsius))}°C`;
+}
+
+function formatWind(kmh) {
+  if (kmh === null || kmh === undefined || isNaN(Number(kmh))) return "0 km/h";
+  const units = getUnits();
+  if (units.wind === "mph") {
+    const mph = Math.round(Number(kmh) * 0.621371);
+    return `${mph} mph`;
+  }
+  return `${Math.round(Number(kmh))} km/h`;
+}
+
+function getKumoPersonality() {
+  return localStorage.getItem("skybrief_kumo_personality") || "directa";
+}
+
+function getDefaultTransport() {
+  return localStorage.getItem("skybrief_default_transport") || "metro";
+}
+
 // Cargar clave previa al iniciar
 if (localStorage.getItem("gemini_key")) {
-  apiKeyInput.value = localStorage.getItem("gemini_key");
+  if (apiKeyInput) apiKeyInput.value = localStorage.getItem("gemini_key");
   const modeloGuardado = localStorage.getItem("gemini_active_model") || "Modo Pro IA";
-  keyStatus.textContent = `● ${modeloGuardado} Conectado`;
-  keyStatus.style.color = "#38bdf8";
+  if (keyStatus) {
+    keyStatus.textContent = `● ${modeloGuardado} Conectado`;
+    keyStatus.style.color = "#38bdf8";
+  }
 }
 
 const themeSelect = document.getElementById("theme-select");
@@ -71,7 +109,7 @@ const temaGuardado = localStorage.getItem("app_theme") || "dark";
 document.documentElement.setAttribute("data-theme", temaGuardado);
 if (themeSelect) themeSelect.value = temaGuardado;
 
-// 2. Escuchar cambios de selección
+// 2. Escuchar cambios de selección de tema
 themeSelect?.addEventListener("change", (e) => {
   const selectedTheme = e.target.value;
   document.documentElement.setAttribute("data-theme", selectedTheme);
@@ -81,43 +119,53 @@ themeSelect?.addEventListener("change", (e) => {
 // ==========================================
 // 1. SELECTOR DE TRANSPORTE
 // ==========================================
-btnWalk.addEventListener("click", () => {
-  btnWalk.classList.add("active");
-  btnCar.classList.remove("active");
-  modoTransporte = "metro";
-  transportLabel.textContent = "Modo transporte: a pie / metro";
-  procesarReporteCompleto();
-});
+if (btnWalk && btnCar) {
+  btnWalk.addEventListener("click", () => {
+    btnWalk.classList.add("active");
+    btnCar.classList.remove("active");
+    modoTransporte = "metro";
+    if (transportLabel) transportLabel.textContent = "Modo transporte: a pie / metro";
+    procesarReporteCompleto();
+  });
 
-btnCar.addEventListener("click", () => {
-  btnCar.classList.add("active");
-  btnWalk.classList.remove("active");
-  modoTransporte = "coche";
-  transportLabel.textContent = "Modo transporte: coche / moto";
-  procesarReporteCompleto();
-});
+  btnCar.addEventListener("click", () => {
+    btnCar.classList.add("active");
+    btnWalk.classList.remove("active");
+    modoTransporte = "coche";
+    if (transportLabel) transportLabel.textContent = "Modo transporte: coche / moto";
+    procesarReporteCompleto();
+  });
+}
 
 // Guardar clave y forzar actualización
-btnSaveKey.addEventListener("click", () => {
-  const clave = apiKeyInput.value.trim();
-  if (clave) {
-    localStorage.setItem("gemini_key", clave);
-    localStorage.removeItem("gemini_active_model");
-    keyStatus.textContent = "Clave guardada. Detectando modelos activos...";
-    keyStatus.style.color = "#38bdf8";
-    procesarReporteCompleto();
-  } else {
-    localStorage.removeItem("gemini_key");
-    localStorage.removeItem("gemini_active_model");
-    keyStatus.textContent = "Clave eliminada. Modo Básico activo.";
-    keyStatus.style.color = "#94a3b8";
-    procesarReporteCompleto();
-  }
-});
+if (btnSaveKey && apiKeyInput) {
+  btnSaveKey.addEventListener("click", () => {
+    const clave = apiKeyInput.value.trim();
+    if (clave) {
+      localStorage.setItem("gemini_key", clave);
+      localStorage.removeItem("gemini_active_model");
+      if (keyStatus) {
+        keyStatus.textContent = "Clave guardada. Detectando modelos activos...";
+        keyStatus.style.color = "#38bdf8";
+      }
+      procesarReporteCompleto();
+    } else {
+      localStorage.removeItem("gemini_key");
+      localStorage.removeItem("gemini_active_model");
+      if (keyStatus) {
+        keyStatus.textContent = "Clave eliminada. Modo Básico activo.";
+        keyStatus.style.color = "#94a3b8";
+      }
+      procesarReporteCompleto();
+    }
+  });
+}
 
-btnRefresh.addEventListener("click", () => {
-  iniciarApp();
-});
+if (btnRefresh) {
+  btnRefresh.addEventListener("click", () => {
+    iniciarApp();
+  });
+}
 
 // ==========================================
 // 0. GESTIÓN DE PERFIL, SEGURIDAD Y NOMBRE DE USUARIO
@@ -512,45 +560,54 @@ function motorNativo(clima, transporte, city, schedule) {
   const intradia = clima.hourly ? analizarCambioIntradia(clima.hourly, schedule) : { aviso: null };
   const drivingAlert = getDrivingAlert(clima);
   const greeting = getKumoGreeting();
+  const personality = getKumoPersonality();
+  const displayTemp = formatTemp(temp);
 
   let items = [];
-  let titular = `${city || "Madrid"} a ${temp}°C: Día templado`;
+  let titular = `${city || "Madrid"} a ${displayTemp}: Día templado`;
   let mensaje = `${greeting}. Luz neutra y cielo despejado. Ponte ropa cómoda de entretiempo y calzado ligero.`;
   let paleta = ["#38BDF8", "#94A3B8", "#0F172A"];
   let mood = "neutral";
 
   if ([95, 96, 99].includes(weatherCode)) {
     mood = "alerta";
-    titular = `${city || "Madrid"} a ${temp}°C: Tormenta eléctrica`;
+    titular = `${city || "Madrid"} a ${displayTemp}: Tormenta eléctrica`;
     mensaje = `${greeting}. Cielo tormentoso con actividad eléctrica y riesgo de granizo. Quédate a cubierto y calzado impermeable.`;
     items.push("Chubasquero técnico", "Calzado impermeable", "Paraguas reforzado");
     paleta = ["#1e293b", "#ef4444", "#0f172a"];
   } else if (probLluvia >= 40) {
     mood = "lluvia";
-    titular = `${city || "Madrid"} a ${temp}°C: Lluvia a la vista`;
+    titular = `${city || "Madrid"} a ${displayTemp}: Lluvia a la vista`;
     mensaje = `${greeting}. Luz difusa y asfalto mojado. Saca el paraguas, chubasquero y ahórrate peinarte.`;
     items.push("Chubasquero o paraguas", "Calzado impermeable");
     paleta = ["#0284c7", "#38bdf8", "#0f172a"];
   } else if (temp >= 28) {
     mood = "sol";
-    titular = `${city || "Madrid"} a ${temp}°C: Sol de justicia`;
+    titular = `${city || "Madrid"} a ${displayTemp}: Sol de justicia`;
     mensaje = `${greeting}. Luz dura y calor implacable. Ropa de lino o algodón fresco, hidratación y sombra.`;
     items.push("Ropa fresca", "Gafas de sol", "Gorra transpirable");
     paleta = ["#f59e0b", "#fbbf24", "#78350f"];
   } else if (temp <= 12) {
     mood = "frio";
-    titular = `${city || "Madrid"} a ${temp}°C: Frío cortante`;
+    titular = `${city || "Madrid"} a ${displayTemp}: Frío cortante`;
     mensaje = `${greeting}. Luz limpia pero aire gélido. Abrigo estructurado o cortavientos y calzado térmico.`;
     items.push("Abrigo grueso", "Calzado térmico", "Bufanda");
     paleta = ["#1e293b", "#475569", "#cbd5e1"];
   } else if (viento >= 35) {
     mood = "viento";
-    titular = `${city || "Madrid"} a ${temp}°C: Viento molesto`;
+    titular = `${city || "Madrid"} a ${displayTemp}: Viento molesto`;
     mensaje = `${greeting}. Rachas continuas y cielo revuelto. Cortavientos cerrado y cuidado con objetos sueltos.`;
     items.push("Chaqueta cortavientos", "Calzado cerrado");
     paleta = ["#334155", "#64748b", "#94a3b8"];
   } else {
     items.push("Prenda principal", "Calzado cómodo", "Gafas de sol");
+  }
+
+  // Ajustar saludo y estilo según personalidad
+  if (personality === "amigable") {
+    mensaje = `${greeting} 😊 ¡Que tengas una gran jornada! ` + mensaje.substring(greeting.length + 2);
+  } else if (personality === "outfits") {
+    mensaje = `${greeting}. Estilismo del día: ` + mensaje.substring(greeting.length + 2);
   }
 
   // Alerta vial solo si modo coche y hay riesgo vial real
@@ -565,7 +622,7 @@ function motorNativo(clima, transporte, city, schedule) {
 
   if (uv >= 6) items.push("Protector solar");
 
-  return { temp: `${temp}°C`, titular, mensaje, items, paleta, mood, intradia };
+  return { temp: displayTemp, titular, mensaje, items, paleta, mood, intradia };
 }
 
 // Extractor de JSON universal y seguro
@@ -715,24 +772,33 @@ async function motorGemini(clima, transporte, city, apiKey, schedule) {
   const intradia = clima.hourly ? analizarCambioIntradia(clima.hourly, schedule) : { aviso: null };
   const drivingAlert = getDrivingAlert(clima);
   const greeting = getKumoGreeting();
+  const personality = getKumoPersonality();
+  const displayTemp = formatTemp(currentTemp);
 
   const drivingInstruction = (transporte === "coche" && drivingAlert.hasHazard)
     ? `HAY ALERTA VIAL ACTIVA EN CARRETERA (${drivingAlert.desc}). Añade una advertencia brevísima para la conducción.`
     : `NO menciones coches, conducir, tráfico ni asfalto. Céntrate exclusivamente en el tiempo, ropa y luz.`;
 
-  const systemInstruction = `Eres "Kumo", una pequeña copiloto meteorológica chibi (chica con gafas, pelo negro y piel mulata), despierta, con energía fresca y humor seco o ironía elegante.
+  let personalityStyle = "Tono directo, sintético y práctico con un toque de humor seco o ironía elegante.";
+  if (personality === "amigable") {
+    personalityStyle = "Tono cálido, amigable, motivador y acogedor, con un saludo cercano y empático.";
+  } else if (personality === "outfits") {
+    personalityStyle = "Tono enfocado en estilismo, moda funcional y combinación elegante de prendas y capas para el día.";
+  }
+
+  const systemInstruction = `Eres "Kumo", una pequeña copiloto meteorológica chibi (chica con gafas, pelo negro y piel mulata), despierta, con energía fresca.
 Tu objetivo: dar el resumen del tiempo, qué ropa ponerse y la calidad de la luz del día.
 
 Reglas estrictas de tono:
 1. Saludo obligatorio: Comienza SIEMPRE saludando al usuario: "${greeting}, ...".
-2. Estructura: Explica en 2 frases cortas la ropa recomendada y la calidad de luz del día con humor seco o ironía limpia (ej: "12°C y lluvia: saca el chubasquero y ahórrate el peinado").
+2. Estilo de personalidad: ${personalityStyle}
 3. Regla vial: ${drivingInstruction}
-4. CERO cursilerías: Prohibido cualquier diminutivo (nada de "abriguito", "gotitas", "fresquito", "brrr", "waaa").
+4. CERO cursilerías: Prohibido cualquier diminutivo infantil (nada de "abriguito", "gotitas", "fresquito", "brrr", "waaa").
 5. Longitud: Máximo 40 palabras en total en el mensaje.
 6. Formato JSON estricto:
 {
-  "titular": "${city} a ${currentTemp}°C: titular conciso y descriptivo",
-  "mensaje": "${greeting}. [2 frases cortas con ropa, luz y toque irónico]",
+  "titular": "${city} a ${displayTemp}: titular conciso y descriptivo",
+  "mensaje": "${greeting}. [2 frases cortas con ropa, luz y estilo seleccionado]",
   "items": ["Prenda 1", "Accesorio 2", "Accesorio 3"],
   "paleta": ["#HEX1", "#HEX2", "#HEX3"],
   "mood": "sol" | "lluvia" | "frio" | "viento" | "alerta" | "neutral"
@@ -741,7 +807,7 @@ Reglas estrictas de tono:
   const prompt = `${systemInstruction}
 
 Datos meteorológicos de ${city}:
-- Temp actual: ${currentTemp}°C (Máx: ${maxTemp}°C, Mín: ${minTemp}°C)
+- Temp actual: ${currentTemp}°C (${displayTemp}) (Máx: ${maxTemp}°C, Mín: ${minTemp}°C)
 - Tramos del día elegidos:
   * Mañana (${schedule.morning}:00): ${tempManana}°C
   * Tarde (${schedule.afternoon}:00): ${tempTarde}°C
@@ -749,7 +815,7 @@ Datos meteorológicos de ${city}:
 - Análisis intradía: ${intradia.aviso || "Sin saltos bruscos térmicos ni de precipitación"}
 - Prob. lluvia: ${probLluvia}%
 - UV: ${uv}
-- Viento: ${viento} km/h
+- Viento: ${viento} km/h (${formatWind(viento)})
 - Modo transporte del usuario: ${transporte}
 - Alerta vial: ${drivingAlert.hasHazard ? drivingAlert.title + ' - ' + drivingAlert.desc : 'Vía despejada'}
 
@@ -759,8 +825,8 @@ Responde exclusivamente con el JSON estricto:`;
   const cleanJson = extractJsonFromText(raw);
   
   return {
-    temp: cleanJson.temp || `${currentTemp}°C`,
-    titular: cleanJson.titular || `${city} a ${currentTemp}°C`,
+    temp: cleanJson.temp || displayTemp,
+    titular: cleanJson.titular || `${city} a ${displayTemp}`,
     mensaje: cleanJson.mensaje || cleanJson.consejo || cleanJson.advice || "Día estable.",
     items: cleanJson.items || cleanJson.que_llevar || cleanJson.queLlevar || ["Ropa cómoda"],
     paleta: cleanJson.paleta || cleanJson.paleta_luz || cleanJson.palette || ["#38BDF8", "#94A3B8", "#0F172A"],
@@ -797,7 +863,7 @@ async function procesarReporteCompleto() {
 
   // Pintar métricas en interfaz
   const windElem = document.getElementById("wind-display") || document.getElementById("wind-metric");
-  if (windElem) windElem.textContent = `${windSpeed} km/h`;
+  if (windElem) windElem.textContent = formatWind(windSpeed);
 
   const uvElem = document.getElementById("uv-display") || document.getElementById("uv-metric");
   if (uvElem) uvElem.textContent = uvMax;
@@ -806,7 +872,7 @@ async function procesarReporteCompleto() {
   if (rainElem) rainElem.textContent = `${rainProb}%`;
 
   const tempElem = document.getElementById("temp-display");
-  if (tempElem) tempElem.textContent = `${currentTemp}°C`;
+  if (tempElem) tempElem.textContent = formatTemp(currentTemp);
 
   let resultado;
 
@@ -974,6 +1040,7 @@ function renderizarPrevisionHoraria(hourlyData) {
     const isNow = (i === startIndex);
     const formattedHour = isNow ? "Ahora" : `${String(hourNum).padStart(2, "0")}:00`;
     const temp = Math.round(hourlyData.temperature_2m[i] ?? 0);
+    const formattedTemp = formatTemp(temp);
     const pop = hourlyData.precipitation_probability ? Math.round(hourlyData.precipitation_probability[i] ?? 0) : 0;
     const code = hourlyData.weather_code ? hourlyData.weather_code[i] : 0;
     const wmo = getWmoHourlyInfo(code);
@@ -982,7 +1049,7 @@ function renderizarPrevisionHoraria(hourlyData) {
       <div class="hourly-item ${isNow ? "now" : ""}">
         <span class="hourly-time">${sanitizeHtml(formattedHour)}</span>
         <span class="hourly-icon" title="${sanitizeHtml(wmo.label)}">${wmo.icon}</span>
-        <span class="hourly-temp">${temp}°</span>
+        <span class="hourly-temp">${formattedTemp}</span>
         ${pop > 0 
           ? `<span class="hourly-pop">💧${pop}%</span>` 
           : `<span class="hourly-pop" style="opacity:0; pointer-events:none;">-</span>`}
@@ -1282,9 +1349,170 @@ async function verificarAlertasCriticas(weatherData) {
   }
 }
 
+function openSidebar() {
+  const sidebar = document.getElementById("app-sidebar");
+  const overlay = document.getElementById("sidebar-overlay");
+  if (sidebar && overlay) {
+    sidebar.classList.remove("hidden");
+    overlay.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+  }
+}
+
+function closeSidebar() {
+  const sidebar = document.getElementById("app-sidebar");
+  const overlay = document.getElementById("sidebar-overlay");
+  if (sidebar && overlay) {
+    sidebar.classList.add("hidden");
+    overlay.classList.add("hidden");
+    document.body.style.overflow = "";
+  }
+}
+
+function initSidebar() {
+  const btnOpen = document.getElementById("btn-open-sidebar");
+  const btnClose = document.getElementById("btn-close-sidebar");
+  const overlay = document.getElementById("sidebar-overlay");
+  const proBanner = document.getElementById("pro-feature-banner");
+  const btnEditName = document.getElementById("btn-sidebar-edit-name");
+  const btnReset = document.getElementById("btn-reset-app-data");
+
+  if (btnOpen) btnOpen.onclick = openSidebar;
+  if (btnClose) btnClose.onclick = closeSidebar;
+  if (overlay) overlay.onclick = closeSidebar;
+
+  if (proBanner) {
+    proBanner.onclick = () => {
+      openSidebar();
+      const apiKeyInput = document.getElementById("api-key");
+      if (apiKeyInput) {
+        setTimeout(() => apiKeyInput.focus(), 350);
+      }
+    };
+  }
+
+  // Tecla Escape para cerrar menú
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeSidebar();
+    }
+  });
+
+  // Botón editar nombre desde el sidebar
+  if (btnEditName) {
+    btnEditName.onclick = () => {
+      closeSidebar();
+      const modal = document.getElementById("welcome-modal");
+      const nameInput = document.getElementById("user-name-input");
+      if (modal) modal.style.display = "flex";
+      if (nameInput) {
+        nameInput.value = getUserName();
+        setTimeout(() => nameInput.focus(), 100);
+      }
+    };
+  }
+
+  // Botón restablecer datos de la app
+  if (btnReset) {
+    btnReset.onclick = () => {
+      const confirmar = confirm("¿Deseas restablecer todas las preferencias, clave de Gemini y datos guardados de SkyBrief?");
+      if (confirmar) {
+        localStorage.clear();
+        alert("Datos restablecidos correctamente.");
+        location.reload();
+      }
+    };
+  }
+
+  // 1. Selector de Personalidad de Kumo
+  const currentPersonality = getKumoPersonality();
+  const personalityButtons = document.querySelectorAll("#kumo-personality-grid .personality-btn");
+  personalityButtons.forEach(btn => {
+    const val = btn.getAttribute("data-personality");
+    if (val === currentPersonality) {
+      btn.classList.add("active");
+    } else {
+      btn.classList.remove("active");
+    }
+
+    btn.onclick = () => {
+      personalityButtons.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      localStorage.setItem("skybrief_kumo_personality", val);
+      procesarReporteCompleto();
+    };
+  });
+
+  // 2. Selector de Transporte Habitual por defecto
+  const defaultTransport = getDefaultTransport();
+  const transportPrefButtons = document.querySelectorAll("#transport-pref-grid .transport-pref-btn");
+  transportPrefButtons.forEach(btn => {
+    const mode = btn.getAttribute("data-pref-mode");
+    if (mode === defaultTransport) {
+      btn.classList.add("active");
+    } else {
+      btn.classList.remove("active");
+    }
+
+    btn.onclick = () => {
+      transportPrefButtons.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      localStorage.setItem("skybrief_default_transport", mode);
+    };
+  });
+
+  // 3. Selectores de Unidades de Medida
+  const units = getUnits();
+  const tempUnitBtns = document.querySelectorAll("#unit-temp-toggle .unit-btn");
+  tempUnitBtns.forEach(btn => {
+    if (btn.getAttribute("data-unit") === units.temp) {
+      btn.classList.add("active");
+    } else {
+      btn.classList.remove("active");
+    }
+
+    btn.onclick = () => {
+      tempUnitBtns.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      localStorage.setItem("skybrief_unit_temp", btn.getAttribute("data-unit"));
+      procesarReporteCompleto();
+    };
+  });
+
+  const windUnitBtns = document.querySelectorAll("#unit-wind-toggle .unit-btn");
+  windUnitBtns.forEach(btn => {
+    if (btn.getAttribute("data-unit") === units.wind) {
+      btn.classList.add("active");
+    } else {
+      btn.classList.remove("active");
+    }
+
+    btn.onclick = () => {
+      windUnitBtns.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      localStorage.setItem("skybrief_unit_wind", btn.getAttribute("data-unit"));
+      procesarReporteCompleto();
+    };
+  });
+}
+
 async function iniciarApp() {
   initUserProfile();
   initVoiceSettings();
+  initSidebar();
+
+  // Establecer modo de transporte por defecto
+  modoTransporte = getDefaultTransport();
+  if (modoTransporte === "coche") {
+    btnCar?.classList.add("active");
+    btnWalk?.classList.remove("active");
+    if (transportLabel) transportLabel.textContent = "Modo transporte: coche / moto";
+  } else {
+    btnWalk?.classList.add("active");
+    btnCar?.classList.remove("active");
+    if (transportLabel) transportLabel.textContent = "Modo transporte: a pie / metro";
+  }
+
   cityTitle.textContent = "Localizando...";
   coordsActuales = await obtenerUbicacion();
   cityTitle.textContent = coordsActuales.city;
