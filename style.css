@@ -723,7 +723,7 @@ h1 { font-size: 1.85rem; font-weight: 800; margin-top: 0.2rem; letter-spacing: -
   line-height: 1.3;
 }
 
-/* Cajas de Diagnóstico y Consejos */
+/* Cajas de Diagnóstico y Alerta Vial */
 .car-box {
   background: rgba(11, 19, 36, 0.65);
   border: 1px solid rgba(30, 58, 138, 0.4);
@@ -735,12 +735,8 @@ h1 { font-size: 1.85rem; font-weight: 800; margin-top: 0.2rem; letter-spacing: -
   width: 100%;
 }
 
-.car-vehicle-box {
-  border-left: 4px solid #38bdf8;
-}
-
-.car-driving-box {
-  border-left: 4px solid #f59e0b;
+.car-alert-impact-box {
+  border-left: 4px solid var(--accent, #38bdf8);
 }
 
 .car-box-header {
@@ -775,6 +771,137 @@ h1 { font-size: 1.85rem; font-weight: 800; margin-top: 0.2rem; letter-spacing: -
   font-weight: 600;
   word-break: break-word;
 }
+
+/* Chip de saludo en Header */
+.user-greeting-pill {
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: var(--accent, #38bdf8);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.3rem 0.65rem;
+  border-radius: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  transition: all 0.2s ease;
+}
+
+.user-greeting-pill:hover {
+  background: rgba(56, 189, 248, 0.22);
+  transform: translateY(-1px);
+}
+
+/* Modal de Bienvenida para Nombre de Usuario */
+.modal-name {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 7, 15, 0.88);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 1.25rem;
+  animation: fadeInModal 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeInModal {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.modal-content {
+  background: var(--bg-card, #15223e);
+  border: 1.5px solid var(--accent, #38bdf8);
+  border-radius: 22px;
+  padding: 1.8rem 1.5rem;
+  max-width: 380px;
+  width: 100%;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  text-align: center;
+}
+
+.modal-avatar-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.modal-kumo-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 2.5px solid var(--accent, #38bdf8);
+  object-fit: cover;
+  box-shadow: 0 4px 18px var(--accent-glow);
+}
+
+.modal-content h3 {
+  font-size: 1.25rem;
+  color: #fff;
+  font-weight: 800;
+  margin: 0;
+}
+
+.modal-content p {
+  font-size: 0.88rem;
+  color: var(--text-muted, #94a3b8);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.modal-name .input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: 100%;
+}
+
+.modal-name input[type="text"] {
+  background: var(--bg-surface, #0f192e);
+  border: 1.5px solid var(--border-sub, #1e2e50);
+  color: #fff;
+  padding: 0.8rem 1rem;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  outline: none;
+  width: 100%;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+
+.modal-name input[type="text"]:focus {
+  border-color: var(--accent, #38bdf8);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.modal-name button {
+  background: var(--accent, #38bdf8);
+  color: #070c18;
+  border: none;
+  font-weight: 800;
+  padding: 0.85rem 1.25rem;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: transform 0.15s, background 0.2s;
+}
+
+.modal-name button:hover {
+  background: var(--accent-hover, #0284c7);
+}
+
+.modal-name button:active {
+  transform: scale(0.98);
+}
+
 
 
 

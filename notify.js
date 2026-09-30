@@ -120,18 +120,24 @@ async function run() {
   const weatherCode = wData.current_weather.weathercode;
   const intradia = analizarCambioIntradia(wData.hourly);
 
-  // 2. Prompt Kumo enfocado en personalidad fresca, ropa y estado vial
-  const systemInstruction = `Eres "Kumo", una pequeña copiloto meteorológica chibi (chica con gafas, pelo negro y piel mulata), despierta, con energía fresca y directa.
-Tu trabajo: dar el resumen del tiempo, la ropa recomendada y el estado vial/conducción del día para Madrid.
+  // 2. Prompt Kumo enfocado en personalidad fresca, ropa, luz y estado vial si hay alerta
+  const hasRoadHazard = lluviaProb >= 40 || tempMin <= 2 || vientoMax >= 45 || weatherCode >= 51;
+  const roadHazardPrompt = hasRoadHazard
+    ? "Hay riesgo meteorológico en carretera (lluvia, frío o viento): añade una advertencia brevísima para la conducción."
+    : "Vía despejada: NO menciones coches, conducir ni tráfico. Céntrate exclusivamente en el tiempo, ropa y luz.";
+
+  const systemInstruction = `Eres "Kumo", una copiloto meteorológica chibi despierta, con energía fresca, directa y con humor seco.
+Tu trabajo: dar el resumen del tiempo, la ropa recomendada y la calidad de la luz del día en Madrid.
 
 Reglas estrictas de tono:
-1. NADA de diminutivos cursis (prohibido: "abriguito", "gotitas", "brrr", "waaa").
-2. Habla de tú a tú, cercano pero con ironía limpia o humor práctico.
-3. Máximo 35 palabras en el mensaje.
-4. Formato JSON estricto:
+1. NADA de diminutivos cursis (prohibido: "abriguito", "gotitas", "brrr", "fresquito").
+2. Explica en 2 frases cortas la ropa recomendada y la luz del día, con humor seco o ironía limpia (ej: "12°C y lluvia: saca el chubasquero y ahórrate el peinado").
+3. Regla vial: ${roadHazardPrompt}
+4. Máximo 35 palabras en el mensaje.
+5. Formato JSON estricto:
 {
-  "titular": "Madrid a ${tempActual}°C (Mín ${tempMin}° / Máx ${tempMax}°): titular conciso e irónico o directo",
-  "mensaje": "Mensaje directo con ropa y recomendación vial",
+  "titular": "Madrid a ${tempActual}°C (Mín ${tempMin}° / Máx ${tempMax}°): titular conciso",
+  "mensaje": "Mensaje directo con ropa y luz",
   "mood": "sol" | "lluvia" | "frio" | "viento" | "alerta" | "neutral"
 }`;
 
@@ -147,7 +153,7 @@ Datos meteorológicos de Madrid:
 Responde exclusivamente con el JSON estricto:`;
 
   let titularFinal = `Madrid a ${tempActual}°C (Mín ${tempMin}° / Máx ${tempMax}°)`;
-  let mensajeFinal = "Tiempo agradable. Ropa cómoda y calzado ligero.";
+  let mensajeFinal = "Luz neutra y condiciones estables. Ropa cómoda de entretiempo y calzado ligero.";
   let moodDetectado = "neutral";
 
   if (GEMINI_API_KEY) {
@@ -173,19 +179,19 @@ Responde exclusivamente con el JSON estricto:`;
   function generarMensajeNativo() {
     if (lluviaProb >= 40) {
       titularFinal = `Madrid a ${tempActual}°C (Mín ${tempMin}° / Máx ${tempMax}°): Lluvia a la vista`;
-      mensajeFinal = `Luz difusa y asfalto mojado. Saca el paraguas, chubasquero y duplica la distancia en coche.${intradia.aviso ? " " + intradia.aviso : ""}`;
+      mensajeFinal = `Luz difusa y asfalto mojado. Saca el paraguas, chubasquero y ahórrate peinarte. ⚠️ Precaución por calzada deslizante.${intradia.aviso ? " " + intradia.aviso : ""}`;
       moodDetectado = "lluvia";
     } else if (tempMin <= 4 || tempActual <= 5) {
       titularFinal = `Madrid a ${tempActual}°C (Mín ${tempMin}° / Máx ${tempMax}°): Frío cortante`;
-      mensajeFinal = `Luz limpia pero aire helado. Abrigo cortavientos, calzado térmico y revisa escarcha en lunas.${intradia.aviso ? " " + intradia.aviso : ""}`;
+      mensajeFinal = `Luz limpia pero aire gélido. Abrigo estructurado o cortavientos y calzado térmico.${tempMin <= 2 ? " ⚠️ Cuidado con placas de hielo en ruta." : ""}${intradia.aviso ? " " + intradia.aviso : ""}`;
       moodDetectado = "frio";
     } else if (tempActual >= 28 || tempMax >= 30) {
       titularFinal = `Madrid a ${tempActual}°C (Mín ${tempMin}° / Máx ${tempMax}°): Sol de justicia`;
-      mensajeFinal = "Luz dura y calor directo. Ropa fresca, hidratación y ventila el habitáculo antes de arrancar.";
+      mensajeFinal = "Luz dura y calor implacable. Ropa de lino o algodón fresco, hidratación y sombra.";
       moodDetectado = "sol";
     } else {
       titularFinal = `Madrid a ${tempActual}°C (Mín ${tempMin}° / Máx ${tempMax}°): Día templado`;
-      mensajeFinal = `Luz neutra y condiciones estables. Ropa cómoda de entretiempo y calzado ligero.${intradia.aviso ? " " + intradia.aviso : ""}`;
+      mensajeFinal = `Luz neutra y cielo despejado. Ropa cómoda de entretiempo y calzado ligero.${intradia.aviso ? " " + intradia.aviso : ""}`;
       moodDetectado = "neutral";
     }
   }

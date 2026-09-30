@@ -11,6 +11,21 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Modal o banner que solo aparece la primera vez para el nombre -->
+  <div id="welcome-modal" class="modal-name" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-avatar-header">
+        <img src="icons/kumo-avatar.png" alt="Kumo" class="modal-kumo-avatar">
+        <h3>¡Hola! Soy Kumo ☁️</h3>
+      </div>
+      <p>Tu copiloto para el tiempo, la luz del día y la carretera. ¿Cómo te llamas?</p>
+      <div class="input-group">
+        <input type="text" id="user-name-input" placeholder="Tu nombre..." maxlength="20" />
+        <button id="save-name-btn" type="button">Empezar</button>
+      </div>
+    </div>
+  </div>
+
   <div class="app-container">
     
     <!-- Banner de Calidad del Aire -->
@@ -38,7 +53,9 @@
 
       <header class="header">
         <div class="header-top">
-          <span class="tag">REPORTE DEL DÍA</span>
+          <button id="btn-edit-user" class="user-greeting-pill" type="button" title="Cambiar tu nombre">
+            <span id="header-user-greeting">👋 Hola</span> ✏️
+          </button>
           <div class="theme-selector-container">
             <label for="theme-select" class="theme-label">Tema:</label>
             <select id="theme-select" class="theme-dropdown">
@@ -84,17 +101,26 @@
         <p id="intraday-text" class="intraday-message"></p>
       </div>
 
-      <!-- Tarjeta en la interfaz (UI) Modo Conducción / Coche -->
+      <!-- Tarjeta en la interfaz (UI) Modo Conducción / Alerta de Trayecto -->
       <div id="car-module-card" class="car-card" style="display: none;">
         <div class="car-header">
           <div class="car-header-left">
             <span class="car-icon">🚗</span>
             <div class="car-header-titles">
-              <strong>COPILOTO VIAL & COCHE</strong>
-              <span class="car-subtitle">Diagnóstico de ruta y vehículo</span>
+              <strong>ALERTA DE TRAYECTO</strong>
+              <span class="car-subtitle">Impacto del clima en la conducción</span>
             </div>
           </div>
-          <span id="car-badge" class="badge">Favorable</span>
+          <span id="car-badge" class="badge badge-low">Vía Despejada</span>
+        </div>
+
+        <!-- Alerta Directa de Conducción / Diagnóstico Vial -->
+        <div class="car-box car-alert-impact-box">
+          <div class="car-box-header">
+            <span class="car-box-icon" id="car-alert-icon">🚦</span>
+            <span id="car-alert-title">ESTADO DE LA VÍA</span>
+          </div>
+          <p id="car-alert-desc" class="car-text">Condiciones estables para conducir. Visibilidad y tracción óptimas.</p>
         </div>
 
         <!-- Tríada de Métricas Viales -->
@@ -120,24 +146,6 @@
               <strong id="car-wind-status">Calma</strong>
             </div>
           </div>
-        </div>
-
-        <!-- Checklist del Vehículo -->
-        <div class="car-box car-vehicle-box">
-          <div class="car-box-header">
-            <span class="car-box-icon">🔧</span>
-            <span>ESTADO DEL VEHÍCULO</span>
-          </div>
-          <p id="car-vehicle-status" class="car-text">Cargando condiciones del vehículo...</p>
-        </div>
-
-        <!-- Consejo de Conducción Kumo -->
-        <div class="car-box car-driving-box">
-          <div class="car-box-header">
-            <span class="car-box-icon">💡</span>
-            <span>CONSEJO DE RUTA KUMO</span>
-          </div>
-          <p id="car-driving-status" class="car-subtext">Cargando recomendaciones viales...</p>
         </div>
       </div>
 

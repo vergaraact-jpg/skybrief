@@ -120,6 +120,66 @@ btnRefresh.addEventListener("click", () => {
 });
 
 // ==========================================
+// 0. GESTIÓN DE PERFIL Y NOMBRE DE USUARIO
+// ==========================================
+function getUserName() {
+  return localStorage.getItem("skybrief_user_name") || "";
+}
+
+function getKumoGreeting() {
+  const name = getUserName();
+  return name ? `Hola ${name}` : "Hola";
+}
+
+function initUserProfile() {
+  const savedName = localStorage.getItem("skybrief_user_name");
+  const modal = document.getElementById("welcome-modal");
+  const saveBtn = document.getElementById("save-name-btn");
+  const nameInput = document.getElementById("user-name-input");
+  const editBtn = document.getElementById("btn-edit-user");
+  const greetingHeader = document.getElementById("header-user-greeting");
+
+  function updateHeaderGreeting(name) {
+    if (greetingHeader) {
+      greetingHeader.textContent = name ? `👋 Hola, ${name}` : "👋 Hola";
+    }
+  }
+
+  if (!savedName) {
+    if (modal) modal.style.display = "flex";
+  } else {
+    updateHeaderGreeting(savedName);
+  }
+
+  if (saveBtn && nameInput) {
+    saveBtn.onclick = () => {
+      const name = nameInput.value.trim();
+      if (name) {
+        localStorage.setItem("skybrief_user_name", name);
+        if (modal) modal.style.display = "none";
+        updateHeaderGreeting(name);
+        procesarReporteCompleto();
+      }
+    };
+    nameInput.onkeydown = (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        saveBtn.click();
+      }
+    };
+  }
+
+  if (editBtn) {
+    editBtn.onclick = () => {
+      const currentName = localStorage.getItem("skybrief_user_name") || "";
+      if (nameInput) nameInput.value = currentName;
+      if (modal) modal.style.display = "flex";
+      setTimeout(() => { if (nameInput) nameInput.focus(); }, 100);
+    };
+  }
+}
+
+// ==========================================
 // 2. CONFIGURACIÓN HORARIA DINÁMICA
 // ==========================================
 function getUserSchedule() {
@@ -328,49 +388,145 @@ function analizarCambioIntradia(hourlyData, schedule) {
   };
 }
 
+// ==========================================
+// 5. ASISTENTE VIAL Y ALERTAS DE CONDUCCIÓN
+// ==========================================
+function getDrivingAlert(weatherData) {
+  if (!weatherData) {
+    return {
+      hasHazard: false,
+      title: "ESTADO DE LA VÍA",
+      desc: "Condiciones estables para circular. Visibilidad y tracción óptimas.",
+      icon: "🟢",
+      level: "bajo",
+      roadStatus: "Asfalto Seco • Tracción 100%",
+      visibilityStatus: "Óptima",
+      windStatus: "Calma"
+    };
+  }
+
+  const tMin = weatherData.daily?.temperature_2m_min?.[0] ?? Math.round(weatherData.current?.temperature_2m ?? 10);
+  const currentTemp = Math.round(weatherData.current?.temperature_2m ?? 15);
+  const lluvia = weatherData.daily?.precipitation_probability_max?.[0] ?? 0;
+  const viento = Math.round(weatherData.current?.wind_speed_10m ?? weatherData.current_weather?.windspeed ?? 10);
+  const weatherCode = weatherData.current?.weather_code ?? weatherData.current_weather?.weathercode ?? weatherData.daily?.weather_code?.[0] ?? 0;
+
+  let roadStatus = "Asfalto Seco • Tracción 100%";
+  let visibilityStatus = "Óptima";
+  let windStatus = viento >= 30 ? `Rachas ${viento} km/h` : "Calma";
+
+  let hasHazard = false;
+  let title = "VÍA DESPEJADA";
+  let desc = "Asfalto seco y condiciones favorables para circular sin incidencias.";
+  let icon = "🟢";
+  let level = "bajo";
+
+  // 1. Peligro Crítico: Hielo / Helada / Nieve
+  if ((weatherCode >= 71 && weatherCode <= 86) || currentTemp <= 2 || tMin <= 1) {
+    hasHazard = true;
+    title = "ALERTA: RIESGO DE HIELO";
+    desc = "Riesgo de placas de hielo en zonas sombrías, puentes y calzadas frías. Conduce con suavidad.";
+    icon = "❄️";
+    level = "alto";
+    roadStatus = "Hielo / Escarcha • Peligro";
+  }
+  // 2. Lluvia Intensa / Aquaplaning / Tormenta
+  else if (weatherCode >= 95 || lluvia >= 60 || (weatherCode >= 63 && weatherCode <= 67) || (weatherCode >= 81 && weatherCode <= 82)) {
+    hasHazard = true;
+    title = "ALERTA: ASFALTO RESBALADIZO";
+    desc = "Pavimento con acumulación de agua y riesgo de aquaplaning. Duplica la distancia de frenado.";
+    icon = "🌧️";
+    level = "alto";
+    roadStatus = "Riesgo Aquaplaning • Frenado x2";
+    visibilityStatus = "Lluvia intensa • Cruce obligatorio";
+  }
+  // 3. Niebla o visibilidad reducida
+  else if (weatherCode >= 45 && weatherCode <= 48) {
+    hasHazard = true;
+    title = "ALERTA: VISIBILIDAD REDUCIDA";
+    desc = "Bancos de niebla densa en ruta. Enciende luces antiniebla y reduce la velocidad de crucero.";
+    icon = "🌫️";
+    level = "alto";
+    visibilityStatus = "Niebla densa • Antinieblas";
+  }
+  // 4. Viento Severo / Lateral
+  else if (viento >= 45) {
+    hasHazard = true;
+    title = "ALERTA: VIENTO FUERTE LATERAL";
+    desc = `Rachas de ${viento} km/h. Precaución extrema al salir de túneles y al adelantar camiones.`;
+    icon = "💨";
+    level = "alto";
+    windStatus = `Viento severo (${viento} km/h)`;
+  }
+  // 5. Precaución Moderada: Calzada húmeda / llovizna
+  else if (lluvia >= 30 || (weatherCode >= 51 && weatherCode <= 62) || weatherCode === 80) {
+    hasHazard = true;
+    title = "PRECAUCIÓN: CALZADA MOJADA";
+    desc = "Asfalto húmedo y agarre reducido. Aumenta la distancia de seguridad con el vehículo precedente.";
+    icon = "🌦️";
+    level = "medio";
+    roadStatus = "Calzada Húmeda • Frenado x1.5";
+    visibilityStatus = "Lluvia ligera • Cruce";
+  }
+
+  return {
+    hasHazard,
+    title,
+    desc,
+    icon,
+    level,
+    roadStatus,
+    visibilityStatus,
+    windStatus
+  };
+}
+
 function motorNativo(clima, transporte, city, schedule) {
   const temp = Math.round(clima.current?.temperature_2m ?? clima.current_weather?.temperature ?? 20);
   const probLluvia = clima.daily?.precipitation_probability_max?.[0] ?? 0;
   const viento = Math.round(clima.current?.wind_speed_10m ?? clima.current_weather?.windspeed ?? 10);
   const uv = clima.daily?.uv_index_max?.[0] ?? 0;
   const intradia = clima.hourly ? analizarCambioIntradia(clima.hourly, schedule) : { aviso: null };
+  const drivingAlert = getDrivingAlert(clima);
+  const greeting = getKumoGreeting();
 
   let items = [];
   let titular = `${city || "Madrid"} a ${temp}°C: Día templado`;
-  let mensaje = "Luz neutra y condiciones estables. Ponte ropa cómoda de entretiempo y calzado ligero.";
+  let mensaje = `${greeting}. Luz neutra y cielo despejado. Ponte ropa cómoda de entretiempo y calzado ligero.`;
   let paleta = ["#38BDF8", "#94A3B8", "#0F172A"];
   let mood = "neutral";
 
   if (probLluvia >= 40) {
     mood = "lluvia";
     titular = `${city || "Madrid"} a ${temp}°C: Lluvia a la vista`;
-    mensaje = transporte === "coche"
-      ? "Luz gris y asfalto mojado. Coge chaqueta impermeable y duplica la distancia de frenado."
-      : "Luz difusa y cielo cubierto. Saca el paraguas, chubasquero y ahórrate el peinado.";
-    items.push(transporte === "coche" ? "Chaqueta impermeable" : "Paraguas resistente", "Calzado impermeable");
+    mensaje = `${greeting}. Luz difusa y asfalto mojado. Saca el paraguas, chubasquero y ahórrate peinarte.`;
+    items.push("Chubasquero o paraguas", "Calzado impermeable");
     paleta = ["#0284c7", "#38bdf8", "#0f172a"];
   } else if (temp >= 28) {
     mood = "sol";
     titular = `${city || "Madrid"} a ${temp}°C: Sol de justicia`;
-    mensaje = transporte === "coche"
-      ? "Luz dura y reflejos intensos. Ventila el habitáculo antes de arrancar y usa gafas de sol."
-      : "Luz radiante y calor directo. Ropa de lino o algodón fresco, hidratación y sombra.";
+    mensaje = `${greeting}. Luz dura y calor implacable. Ropa de lino o algodón fresco, hidratación y sombra.`;
     items.push("Ropa fresca", "Gafas de sol", "Gorra transpirable");
     paleta = ["#f59e0b", "#fbbf24", "#78350f"];
   } else if (temp <= 12) {
     mood = "frio";
     titular = `${city || "Madrid"} a ${temp}°C: Frío cortante`;
-    mensaje = "Luz limpia pero aire helado. Chaqueta estructurada o abrigo cortavientos y calzado cerrado.";
-    items.push("Chaqueta gruesa", "Calzado térmico", "Bufanda o cuello");
+    mensaje = `${greeting}. Luz limpia pero aire gélido. Abrigo estructurado o cortavientos y calzado térmico.`;
+    items.push("Abrigo grueso", "Calzado térmico", "Bufanda");
     paleta = ["#1e293b", "#475569", "#cbd5e1"];
   } else if (viento >= 35) {
     mood = "viento";
     titular = `${city || "Madrid"} a ${temp}°C: Viento molesto`;
-    mensaje = "Rachas continuas. Cortavientos cerrado y cuidado con objetos sueltos.";
+    mensaje = `${greeting}. Rachas continuas y cielo revuelto. Cortavientos cerrado y cuidado con objetos sueltos.`;
     items.push("Chaqueta cortavientos", "Calzado cerrado");
     paleta = ["#334155", "#64748b", "#94a3b8"];
   } else {
     items.push("Prenda principal", "Calzado cómodo", "Gafas de sol");
+  }
+
+  // Alerta vial solo si modo coche y hay riesgo vial real
+  if (transporte === "coche" && drivingAlert.hasHazard) {
+    mensaje += ` ⚠️ En ruta: ${drivingAlert.desc}`;
   }
 
   if (intradia && intradia.aviso) {
@@ -517,7 +673,6 @@ async function motorGemini(clima, transporte, city, apiKey, schedule) {
   const uv = clima.daily?.uv_index_max?.[0] ?? 0;
   const viento = Math.round(clima.current?.wind_speed_10m ?? clima.current_weather?.windspeed ?? 10);
 
-  // Extraer temperaturas horarias específicas de los tramos elegidos
   const tempManana = clima.hourly?.temperature_2m?.[schedule.morning] !== undefined 
     ? Math.round(clima.hourly.temperature_2m[schedule.morning]) 
     : currentTemp;
@@ -529,19 +684,26 @@ async function motorGemini(clima, transporte, city, apiKey, schedule) {
     : minTemp;
 
   const intradia = clima.hourly ? analizarCambioIntradia(clima.hourly, schedule) : { aviso: null };
+  const drivingAlert = getDrivingAlert(clima);
+  const greeting = getKumoGreeting();
 
-  const systemInstruction = `Eres "Kumo", una pequeña copiloto meteorológica chibi (chica con gafas, pelo negro y piel mulata), despierta, con energía fresca y directa.
-Tu trabajo: dar el resumen del tiempo, la ropa recomendada y la calidad de luz del día.
+  const drivingInstruction = (transporte === "coche" && drivingAlert.hasHazard)
+    ? `HAY ALERTA VIAL ACTIVA EN CARRETERA (${drivingAlert.desc}). Añade una advertencia brevísima para la conducción.`
+    : `NO menciones coches, conducir, tráfico ni asfalto. Céntrate exclusivamente en el tiempo, ropa y luz.`;
+
+  const systemInstruction = `Eres "Kumo", una pequeña copiloto meteorológica chibi (chica con gafas, pelo negro y piel mulata), despierta, con energía fresca y humor seco o ironía elegante.
+Tu objetivo: dar el resumen del tiempo, qué ropa ponerse y la calidad de la luz del día.
 
 Reglas estrictas de tono:
-1. NADA de diminutivos cursis (prohibido: "abriguito", "gotitas", "brrr", "waaa").
-2. Habla de tú a tú, cercano pero con ironía limpia o humor práctico (ej: "12°C y lluvia: saca el chubasquero y ahórrate el peinado").
-3. Incluye siempre el dato visual útil para foto/luz si el día lo amerita (ej: "Luz dorada", "Luz difusa").
-4. Longitud: Máximo 35 palabras en total en el mensaje.
-5. Formato JSON estricto:
+1. Saludo obligatorio: Comienza SIEMPRE saludando al usuario: "${greeting}, ...".
+2. Estructura: Explica en 2 frases cortas la ropa recomendada y la calidad de luz del día con humor seco o ironía limpia (ej: "12°C y lluvia: saca el chubasquero y ahórrate el peinado").
+3. Regla vial: ${drivingInstruction}
+4. CERO cursilerías: Prohibido cualquier diminutivo (nada de "abriguito", "gotitas", "fresquito", "brrr", "waaa").
+5. Longitud: Máximo 40 palabras en total en el mensaje.
+6. Formato JSON estricto:
 {
-  "titular": "${city} a ${currentTemp}°C: titular conciso descriptivo",
-  "mensaje": "Mensaje directo con ropa recomendada y luz",
+  "titular": "${city} a ${currentTemp}°C: titular conciso y descriptivo",
+  "mensaje": "${greeting}. [2 frases cortas con ropa, luz y toque irónico]",
   "items": ["Prenda 1", "Accesorio 2", "Accesorio 3"],
   "paleta": ["#HEX1", "#HEX2", "#HEX3"],
   "mood": "sol" | "lluvia" | "frio" | "viento" | "alerta" | "neutral"
@@ -551,7 +713,7 @@ Reglas estrictas de tono:
 
 Datos meteorológicos de ${city}:
 - Temp actual: ${currentTemp}°C (Máx: ${maxTemp}°C, Mín: ${minTemp}°C)
-- Tramos del día elegidos por el usuario:
+- Tramos del día elegidos:
   * Mañana (${schedule.morning}:00): ${tempManana}°C
   * Tarde (${schedule.afternoon}:00): ${tempTarde}°C
   * Noche (${schedule.night}:00): ${tempNoche}°C
@@ -559,7 +721,8 @@ Datos meteorológicos de ${city}:
 - Prob. lluvia: ${probLluvia}%
 - UV: ${uv}
 - Viento: ${viento} km/h
-- Modo de transporte elegido por el usuario: ${transporte}
+- Modo transporte del usuario: ${transporte}
+- Alerta vial: ${drivingAlert.hasHazard ? drivingAlert.title + ' - ' + drivingAlert.desc : 'Vía despejada'}
 
 Responde exclusivamente con el JSON estricto:`;
 
@@ -575,133 +738,6 @@ Responde exclusivamente con el JSON estricto:`;
     mood: (cleanJson.mood || "neutral").toLowerCase(),
     modeloUsado: model
   };
-}
-
-// ==========================================
-// 6. ASISTENTE VIAL Y CONTEXTUAL DE VEHÍCULO
-// ==========================================
-function generarConsejoCocheNativo(weatherData) {
-  const tMin = weatherData.daily?.temperature_2m_min?.[0] ?? Math.round(weatherData.current?.temperature_2m ?? 10);
-  const tMax = weatherData.daily?.temperature_2m_max?.[0] ?? Math.round(weatherData.current?.temperature_2m ?? 20);
-  const currentTemp = Math.round(weatherData.current?.temperature_2m ?? 15);
-  const lluvia = weatherData.daily?.precipitation_probability_max?.[0] ?? 0;
-  const viento = Math.round(weatherData.current?.wind_speed_10m ?? weatherData.current_weather?.windspeed ?? 10);
-  const weatherCode = weatherData.current?.weather_code ?? weatherData.current_weather?.weathercode ?? weatherData.daily?.weather_code?.[0] ?? 0;
-
-  let asfalto = "Asfalto Seco • Agarre 100%";
-  let visibilidad = "Visibilidad Óptima";
-  let vientoRuta = viento >= 35 ? `Rachas ${viento} km/h` : "Calma";
-  let alerta_coche = "Batería, neumáticos y niveles en rango ideal.";
-  let consejo_conduccion = "Condiciones de circulación favorables y asfalto seco.";
-  let precaucion_nivel = "bajo";
-
-  // Calzada / Asfalto
-  if ((weatherCode >= 71 && weatherCode <= 86) || tMin <= 1) {
-    asfalto = "Hielo / Nieve • Frenado x2";
-    precaucion_nivel = "alto";
-  } else if (weatherCode >= 95 || lluvia >= 60) {
-    asfalto = "Riesgo Aquaplaning • Frenado x2";
-    precaucion_nivel = "alto";
-  } else if (lluvia >= 30 || (weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 82)) {
-    asfalto = "Calzada Húmeda • Frenado x1.5";
-    if (precaucion_nivel === "bajo") precaucion_nivel = "medio";
-  }
-
-  // Visibilidad y luces
-  if (weatherCode >= 45 && weatherCode <= 48) {
-    visibilidad = "Niebla densa • Luces antiniebla";
-    precaucion_nivel = "alto";
-  } else if (lluvia >= 40 || (weatherCode >= 51 && weatherCode <= 67)) {
-    visibilidad = "Lluvia • Luces de cruce";
-    if (precaucion_nivel === "bajo") precaucion_nivel = "medio";
-  } else if (currentTemp >= 25) {
-    visibilidad = "Sol intenso • Gafas de sol";
-  }
-
-  // Viento
-  if (viento >= 50) {
-    vientoRuta = `Viento muy fuerte (${viento} km/h)`;
-    precaucion_nivel = "alto";
-  } else if (viento >= 30) {
-    vientoRuta = `Rachas laterales (${viento} km/h)`;
-    if (precaucion_nivel === "bajo") precaucion_nivel = "medio";
-  }
-
-  // Estado del vehículo
-  if (tMin <= 3) {
-    alerta_coche = "Escarcha en lunas: usa desempañador térmico y vigila rendimiento de batería.";
-  } else if (tMax >= 32 || currentTemp >= 30) {
-    alerta_coche = "Calor alto: ventila 2 minutos antes de arrancar y revisa presión de neumáticos.";
-  } else if (tMin < 8) {
-    alerta_coche = "Mañana fría: arranca suave y conecta climatización moderada.";
-  }
-
-  // Consejo de conducción Kumo
-  if (asfalto.includes("Hielo") || asfalto.includes("Nieve")) {
-    consejo_conduccion = "Máxima suavidad con freno y acelerador. Prohibido volantazos.";
-  } else if (asfalto.includes("Aquaplaning") || asfalto.includes("Húmeda")) {
-    consejo_conduccion = "Asfalto resbaladizo: suelta acelerador ante charcos y no frenes bruscamente en curva.";
-  } else if (viento >= 40) {
-    consejo_conduccion = "Atención al salir de túneles y al rebasar vehículos pesados en viaductos.";
-  } else {
-    consejo_conduccion = "Ruta despejada y asfalto en buen estado. Conducción fluida y distancias habituales.";
-  }
-
-  return {
-    asfalto,
-    visibilidad,
-    viento: vientoRuta,
-    alerta_coche,
-    consejo_conduccion,
-    precaucion_nivel
-  };
-}
-
-async function generarConsejoCoche(weatherData, apiKey) {
-  const tMin = weatherData.daily?.temperature_2m_min?.[0] ?? Math.round(weatherData.current?.temperature_2m ?? 10);
-  const tMax = weatherData.daily?.temperature_2m_max?.[0] ?? Math.round(weatherData.current?.temperature_2m ?? 20);
-  const currentTemp = Math.round(weatherData.current?.temperature_2m ?? 15);
-  const lluvia = weatherData.daily?.precipitation_probability_max?.[0] ?? 0;
-  const viento = Math.round(weatherData.current?.wind_speed_10m ?? weatherData.current_weather?.windspeed ?? 10);
-  const weatherCode = weatherData.current?.weather_code ?? weatherData.current_weather?.weathercode ?? weatherData.daily?.weather_code?.[0] ?? 0;
-
-  if (!apiKey) {
-    return generarConsejoCocheNativo(weatherData);
-  }
-
-  const prompt = `Actúa como copiloto vial y mecánico experto con la personalidad de Kumo (directa, inteligente y concisa).
-Analiza estos datos meteorológicos:
-- Temperatura actual / mín / máx: ${currentTemp}°C / ${tMin}°C / ${tMax}°C
-- Probabilidad de lluvia: ${lluvia}%
-- Velocidad del viento: ${viento} km/h
-- Código WMO: ${weatherCode}
-
-Devuelve exclusivamente un JSON estricto con:
-{
-  "asfalto": "Asfalto Seco • Agarre 100%" | "Calzada Húmeda • Frenado x1.5" | "Riesgo Aquaplaning • Frenado x2" | "Hielo / Nieve • Precaución x2",
-  "visibilidad": "Óptima" | "Luces de Cruce requeridas" | "Niebla / Antinieblas" | "Deslumbramiento solar",
-  "viento": "Calma" | "Rachas laterales moderadas" | "Viento fuerte lateral",
-  "alerta_coche": "Checklist conciso del vehículo: lunas/vaho, batería, climatización o neumáticos (1 frase)",
-  "consejo_conduccion": "Consejo de conducción directo e ingenioso de Kumo (máx 20 palabras)",
-  "precaucion_nivel": "bajo" | "medio" | "alto"
-}`;
-
-  try {
-    const { text: rawText } = await callGeminiAutoDetect(apiKey, prompt);
-    const cleanJson = extractJsonFromText(rawText);
-    
-    return {
-      asfalto: cleanJson.asfalto || "Asfalto Seco • Agarre 100%",
-      visibilidad: cleanJson.visibilidad || "Óptima",
-      viento: cleanJson.viento || "Calma",
-      alerta_coche: cleanJson.alerta_coche || "Niveles y neumáticos en buen estado.",
-      consejo_conduccion: cleanJson.consejo_conduccion || "Conducción regular.",
-      precaucion_nivel: (cleanJson.precaucion_nivel || "bajo").toLowerCase()
-    };
-  } catch (err) {
-    console.warn("Fallo al consultar módulo coche en Gemini, aplicando fallback nativo:", err);
-    return generarConsejoCocheNativo(weatherData);
-  }
 }
 
 // ==========================================
@@ -817,31 +853,32 @@ async function procesarReporteCompleto() {
     }
   }
 
-  // Manejo de la Tarjeta de Conducción / Coche si modoTransporte === "coche"
+  // Manejo de la Tarjeta de Conducción / Alerta de Trayecto si modoTransporte === "coche"
   const carCard = document.getElementById("car-module-card") || document.getElementById("car-assistant-card");
+  const carAlertTitle = document.getElementById("car-alert-title");
+  const carAlertDesc = document.getElementById("car-alert-desc");
+  const carAlertIcon = document.getElementById("car-alert-icon");
   const carRoadStatus = document.getElementById("car-road-status");
   const carVisibilityStatus = document.getElementById("car-visibility-status");
   const carWindStatus = document.getElementById("car-wind-status");
-  const carVehicleStatus = document.getElementById("car-vehicle-status") || document.getElementById("car-vehicle-alert");
-  const carDrivingStatus = document.getElementById("car-driving-status") || document.getElementById("car-driving-advice");
   const carBadge = document.getElementById("car-badge") || document.getElementById("car-risk-badge");
 
   if (modoTransporte === "coche") {
     if (carCard) carCard.style.display = "flex";
     try {
-      const consejoCoche = await generarConsejoCoche(clima, apiKey);
-      if (carRoadStatus) carRoadStatus.textContent = consejoCoche.asfalto || "Asfalto Seco • Agarre 100%";
-      if (carVisibilityStatus) carVisibilityStatus.textContent = consejoCoche.visibilidad || "Óptima";
-      if (carWindStatus) carWindStatus.textContent = consejoCoche.viento || "Calma";
-      if (carVehicleStatus) carVehicleStatus.textContent = consejoCoche.alerta_coche;
-      if (carDrivingStatus) carDrivingStatus.textContent = consejoCoche.consejo_conduccion;
+      const drivingAlert = getDrivingAlert(clima);
+      if (carAlertTitle) carAlertTitle.textContent = drivingAlert.title;
+      if (carAlertDesc) carAlertDesc.textContent = drivingAlert.desc;
+      if (carAlertIcon) carAlertIcon.textContent = drivingAlert.icon;
+      if (carRoadStatus) carRoadStatus.textContent = drivingAlert.roadStatus;
+      if (carVisibilityStatus) carVisibilityStatus.textContent = drivingAlert.visibilityStatus;
+      if (carWindStatus) carWindStatus.textContent = drivingAlert.windStatus;
       if (carBadge) {
-        const nivel = (consejoCoche.precaucion_nivel || "bajo").toLowerCase();
-        carBadge.className = `badge badge-${nivel === "alto" ? "high" : nivel === "medio" ? "med" : "low"}`;
-        carBadge.textContent = nivel === "alto" ? "Atención Alta" : nivel === "medio" ? "Precaución" : "Favorable";
+        carBadge.className = `badge badge-${drivingAlert.level === "alto" ? "high" : drivingAlert.level === "medio" ? "med" : "low"}`;
+        carBadge.textContent = drivingAlert.level === "alto" ? "Alerta en Ruta" : drivingAlert.level === "medio" ? "Precaución" : "Vía Despejada";
       }
     } catch (e) {
-      console.warn("Error al renderizar consejo de coche:", e);
+      console.warn("Error al renderizar alerta de trayecto:", e);
     }
   } else {
     if (carCard) carCard.style.display = "none";
@@ -922,6 +959,7 @@ async function verificarAlertasCriticas(weatherData) {
 }
 
 async function iniciarApp() {
+  initUserProfile();
   cityTitle.textContent = "Localizando...";
   coordsActuales = await obtenerUbicacion();
   cityTitle.textContent = coordsActuales.city;
