@@ -433,8 +433,18 @@ function getDrivingAlert(weatherData) {
   let icon = "🟢";
   let level = "bajo";
 
-  // 1. Peligro Crítico: Hielo / Helada / Nieve
-  if ((weatherCode >= 71 && weatherCode <= 86) || currentTemp <= 2 || tMin <= 1) {
+  // 1. Peligro Crítico: Tormenta Eléctrica / Granizo (WMO 95, 96, 99)
+  if ([95, 96, 99].includes(weatherCode)) {
+    hasHazard = true;
+    title = weatherCode >= 96 ? "ALERTA: TORMENTA CON GRANIZO" : "ALERTA: TORMENTA ELÉCTRICA";
+    desc = "Actividad eléctrica y riesgo de granizo o aquaplaning. Detén la marcha en lugar seguro y evita túneles anegados.";
+    icon = "⛈️";
+    level = "alto";
+    roadStatus = "Calzada Anegada / Granizo • Peligro";
+    visibilityStatus = "Tormenta severa • Cruce y antiniebla";
+  }
+  // 2. Peligro Crítico: Hielo / Helada / Nieve
+  else if ((weatherCode >= 71 && weatherCode <= 86) || currentTemp <= 2 || tMin <= 1) {
     hasHazard = true;
     title = "ALERTA: RIESGO DE HIELO";
     desc = "Riesgo de placas de hielo en zonas sombrías, puentes y calzadas frías. Conduce con suavidad.";
@@ -442,8 +452,8 @@ function getDrivingAlert(weatherData) {
     level = "alto";
     roadStatus = "Hielo / Escarcha • Peligro";
   }
-  // 2. Lluvia Intensa / Aquaplaning / Tormenta
-  else if (weatherCode >= 95 || lluvia >= 60 || (weatherCode >= 63 && weatherCode <= 67) || (weatherCode >= 81 && weatherCode <= 82)) {
+  // 3. Lluvia Intensa / Aquaplaning / Torrencial (65, 82 o prob >= 60%)
+  else if (lluvia >= 60 || (weatherCode >= 63 && weatherCode <= 67) || (weatherCode >= 81 && weatherCode <= 82)) {
     hasHazard = true;
     title = "ALERTA: ASFALTO RESBALADIZO";
     desc = "Pavimento con acumulación de agua y riesgo de aquaplaning. Duplica la distancia de frenado.";
@@ -452,7 +462,7 @@ function getDrivingAlert(weatherData) {
     roadStatus = "Riesgo Aquaplaning • Frenado x2";
     visibilityStatus = "Lluvia intensa • Cruce obligatorio";
   }
-  // 3. Niebla o visibilidad reducida
+  // 4. Niebla o visibilidad reducida
   else if (weatherCode >= 45 && weatherCode <= 48) {
     hasHazard = true;
     title = "ALERTA: VISIBILIDAD REDUCIDA";
@@ -461,7 +471,7 @@ function getDrivingAlert(weatherData) {
     level = "alto";
     visibilityStatus = "Niebla densa • Antinieblas";
   }
-  // 4. Viento Severo / Lateral
+  // 5. Viento Severo / Lateral
   else if (viento >= 45) {
     hasHazard = true;
     title = "ALERTA: VIENTO FUERTE LATERAL";
@@ -470,7 +480,7 @@ function getDrivingAlert(weatherData) {
     level = "alto";
     windStatus = `Viento severo (${viento} km/h)`;
   }
-  // 5. Precaución Moderada: Calzada húmeda / llovizna
+  // 6. Precaución Moderada: Calzada húmeda / llovizna
   else if (lluvia >= 30 || (weatherCode >= 51 && weatherCode <= 62) || weatherCode === 80) {
     hasHazard = true;
     title = "PRECAUCIÓN: CALZADA MOJADA";
@@ -498,6 +508,7 @@ function motorNativo(clima, transporte, city, schedule) {
   const probLluvia = clima.daily?.precipitation_probability_max?.[0] ?? 0;
   const viento = Math.round(clima.current?.wind_speed_10m ?? clima.current_weather?.windspeed ?? 10);
   const uv = clima.daily?.uv_index_max?.[0] ?? 0;
+  const weatherCode = clima.current?.weather_code ?? clima.current_weather?.weathercode ?? clima.daily?.weather_code?.[0] ?? 0;
   const intradia = clima.hourly ? analizarCambioIntradia(clima.hourly, schedule) : { aviso: null };
   const drivingAlert = getDrivingAlert(clima);
   const greeting = getKumoGreeting();
@@ -508,7 +519,13 @@ function motorNativo(clima, transporte, city, schedule) {
   let paleta = ["#38BDF8", "#94A3B8", "#0F172A"];
   let mood = "neutral";
 
-  if (probLluvia >= 40) {
+  if ([95, 96, 99].includes(weatherCode)) {
+    mood = "alerta";
+    titular = `${city || "Madrid"} a ${temp}°C: Tormenta eléctrica`;
+    mensaje = `${greeting}. Cielo tormentoso con actividad eléctrica y riesgo de granizo. Quédate a cubierto y calzado impermeable.`;
+    items.push("Chubasquero técnico", "Calzado impermeable", "Paraguas reforzado");
+    paleta = ["#1e293b", "#ef4444", "#0f172a"];
+  } else if (probLluvia >= 40) {
     mood = "lluvia";
     titular = `${city || "Madrid"} a ${temp}°C: Lluvia a la vista`;
     mensaje = `${greeting}. Luz difusa y asfalto mojado. Saca el paraguas, chubasquero y ahórrate peinarte.`;
@@ -944,19 +961,34 @@ async function verificarAlertasCriticas(weatherData) {
   // 2. Si no hay sismo, verificar fenómenos meteorológicos severos
   if (!alertaActiva && weatherData) {
     const viento = Math.round(weatherData.current_weather?.windspeed || weatherData.current?.wind_speed_10m || 0);
+    const rachaMax = Math.round(weatherData.daily?.wind_gusts_10m_max?.[0] || weatherData.current?.wind_gusts_10m || viento);
     const weatherCode = weatherData.current_weather?.weathercode || weatherData.current?.weather_code || 0;
+    const dailyCode = weatherData.daily?.weather_code?.[0] || 0;
+    const hourlyCodes = weatherData.hourly?.weather_code ? weatherData.hourly.weather_code.slice(0, 24) : [];
 
-    // Vientos muy fuertes (> 70 km/h)
-    if (viento >= 70) {
+    const hayTormenta = [95, 96, 99].includes(weatherCode) || [95, 96, 99].includes(dailyCode) || hourlyCodes.some(c => [95, 96, 99].includes(c));
+    const esGranizo = [96, 99].includes(weatherCode) || [96, 99].includes(dailyCode) || hourlyCodes.some(c => [96, 99].includes(c));
+    const hayLluviaTorrencial = [65, 82].includes(weatherCode) || [65, 82].includes(dailyCode);
+
+    // Tormenta eléctrica fuerte o granizo (95, 96, 99)
+    if (hayTormenta) {
       alertaActiva = true;
-      subtitulo = "Aviso de Viento Severo";
-      textoAlerta = `Rachas peligrosas de ${viento} km/h. Precaución en carretera y vía pública.`;
+      subtitulo = esGranizo ? "⚡ ALERTA: TORMENTA CON GRANIZO" : "⚡ ALERTA: TORMENTA ELÉCTRICA FUERTE";
+      textoAlerta = esGranizo
+        ? "Actividad eléctrica severa con riesgo de caída de granizo. Protege vehículos y busca resguardo seguro."
+        : "Tormenta eléctrica inminente o prevista en la zona. Evita zonas descampadas y pasos subterráneos.";
+    }
+    // Vientos muy fuertes o temporal (> 65-70 km/h)
+    else if (viento >= 70 || rachaMax >= 75) {
+      alertaActiva = true;
+      subtitulo = "💨 ALERTA: TEMPORAL DE VIENTO SEVERO";
+      textoAlerta = `Rachas violentas de ${Math.max(viento, rachaMax)} km/h. Precaución extrema por desprendimientos y en carretera.`;
     } 
-    // Códigos WMO de tormenta eléctrica fuerte o granizo (95, 96, 99)
-    else if ([95, 96, 99].includes(weatherCode)) {
+    // Lluvia torrencial (WMO 65, 82)
+    else if (hayLluviaTorrencial) {
       alertaActiva = true;
-      subtitulo = "Tormenta Eléctrica / Granizo";
-      textoAlerta = "Riesgo de tormenta severa inminente en la zona.";
+      subtitulo = "🌧️ ALERTA: PRECIPITACIONES TORRENCIALES";
+      textoAlerta = "Lluvia de gran intensidad con riesgo de balsas de agua y saturación de drenajes.";
     }
   }
 
@@ -1076,8 +1108,14 @@ function obtenerMetricasClimaNotificacion() {
   let tag = "Soleado";
   let iconFile = "icons/weather-sun.png";
 
-  // Lluvia / precipitaciones
-  if (lluviaProb >= 40 || (weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 99)) {
+  // Tormenta eléctrica / granizo / lluvia / precipitaciones
+  if ([95, 96, 99].includes(weatherCode)) {
+    condicion = "tormenta";
+    icono = "⛈️";
+    color = "#ef4444";
+    tag = weatherCode >= 96 ? "Tormenta con Granizo" : "Tormenta Eléctrica";
+    iconFile = "icons/weather-rain.png";
+  } else if (lluviaProb >= 40 || (weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 90)) {
     condicion = "lluvia";
     icono = "🌧️";
     color = "#38bdf8";

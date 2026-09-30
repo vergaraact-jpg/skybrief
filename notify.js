@@ -177,7 +177,11 @@ Responde exclusivamente con el JSON estricto:`;
   }
 
   function generarMensajeNativo() {
-    if (lluviaProb >= 40) {
+    if ([95, 96, 99].includes(weatherCode)) {
+      titularFinal = `Madrid a ${tempActual}°C (Mín ${tempMin}° / Máx ${tempMax}°): ${weatherCode >= 96 ? "Tormenta con granizo" : "Tormenta eléctrica"}`;
+      mensajeFinal = `⚡ Actividad eléctrica y riesgo de granizo. Evita zonas abiertas o inundables y busca resguardo seguro.${intradia.aviso ? " " + intradia.aviso : ""}`;
+      moodDetectado = "alerta";
+    } else if (lluviaProb >= 40) {
       titularFinal = `Madrid a ${tempActual}°C (Mín ${tempMin}° / Máx ${tempMax}°): Lluvia a la vista`;
       mensajeFinal = `Luz difusa y asfalto mojado. Saca el paraguas, chubasquero y ahórrate peinarte. ⚠️ Precaución por calzada deslizante.${intradia.aviso ? " " + intradia.aviso : ""}`;
       moodDetectado = "lluvia";
@@ -196,12 +200,16 @@ Responde exclusivamente con el JSON estricto:`;
     }
   }
 
-  // 3. Selección de condición climática visual (Sol, Lluvia, Frío, Calor)
+  // 3. Selección de condición climática visual (Sol, Lluvia, Frío, Calor, Tormenta)
   let tag = "sunny,sun_with_face";
   let iconoClima = "☀️";
   let iconUrl = "https://raw.githubusercontent.com/vergaraact-jpg/skybrief/main/icons/weather-sun.png";
 
-  if (moodDetectado === "lluvia" || lluviaProb >= 40 || (weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 99)) {
+  if ([95, 96, 99].includes(weatherCode) || moodDetectado === "alerta") {
+    tag = "thunderstorm,lightning,zap,umbrella";
+    iconoClima = "⛈️";
+    iconUrl = "https://raw.githubusercontent.com/vergaraact-jpg/skybrief/main/icons/weather-rain.png";
+  } else if (moodDetectado === "lluvia" || lluviaProb >= 40 || (weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 90)) {
     tag = "rain_cloud,umbrella,droplet";
     iconoClima = "🌧️";
     iconUrl = "https://raw.githubusercontent.com/vergaraact-jpg/skybrief/main/icons/weather-rain.png";
