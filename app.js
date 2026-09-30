@@ -1015,28 +1015,29 @@ function generarTextoLecturaKumo() {
   const greeting = getKumoGreeting();
   const headline = document.getElementById("kumo-headline")?.textContent || "";
   const advice = document.getElementById("alert-text")?.textContent || "";
-  const items = Array.from(document.querySelectorAll("#items-list .pill")).map(el => el.textContent.trim()).filter(Boolean).join(", ");
+  const items = Array.from(document.querySelectorAll("#items-list .pill")).map(el => el.textContent.trim()).filter(Boolean);
   const intraday = document.getElementById("intraday-text")?.textContent || "";
   const temp = document.getElementById("temp-display")?.textContent || "";
 
-  let texto = `${greeting}. `;
+  let partes = [];
+  if (greeting) partes.push(greeting);
   if (headline && !headline.toLowerCase().includes("cargando")) {
-    texto += `${headline}. `;
+    partes.push(headline);
   }
   if (temp) {
-    texto += `Tenemos ${temp} en el exterior. `;
+    partes.push(`Temperatura actual: ${temp}`);
   }
   if (advice && !advice.toLowerCase().includes("consultando")) {
-    texto += `${advice}. `;
+    partes.push(advice);
   }
   if (intraday) {
-    texto += `Nota de cambio: ${intraday}. `;
+    partes.push(`Nota de cambio: ${intraday}`);
   }
-  if (items) {
-    texto += `Te recomiendo llevar: ${items}. `;
+  if (items.length > 0) {
+    partes.push(`Te recomiendo llevar: ${items.join(", ")}`);
   }
 
-  return texto;
+  return partes.join(". ") + ".";
 }
 
 function hablarKumo(textoPersonalizado) {
@@ -1055,16 +1056,24 @@ function hablarKumo(textoPersonalizado) {
   const texto = textoPersonalizado || generarTextoLecturaKumo();
   if (!texto || !texto.trim()) return;
 
+  try {
+    window.speechSynthesis.resume();
+  } catch (e) {}
+
   const utterance = new SpeechSynthesisUtterance(texto);
   utterance.lang = "es-ES";
-  utterance.rate = 1.0;
+  utterance.rate = 0.96;
   utterance.pitch = 1.05;
 
   const voices = window.speechSynthesis.getVoices();
-  const spanishVoice = voices.find(v => v.lang.startsWith("es") && (v.name.includes("Google") || v.name.includes("Natural") || v.name.includes("Neural"))) ||
-                       voices.find(v => v.lang.startsWith("es"));
-  if (spanishVoice) {
-    utterance.voice = spanishVoice;
+  if (voices && voices.length > 0) {
+    const spanishVoice = voices.find(v => (v.lang.startsWith("es-ES") || v.lang.startsWith("es_ES")) && (v.name.includes("Google") || v.name.includes("Natural") || v.name.includes("Neural") || v.name.includes("Premium"))) ||
+                         voices.find(v => v.lang.startsWith("es") && (v.name.includes("Google") || v.name.includes("Natural") || v.name.includes("Neural"))) ||
+                         voices.find(v => v.lang.startsWith("es-ES") || v.lang.startsWith("es_ES")) ||
+                         voices.find(v => v.lang.startsWith("es"));
+    if (spanishVoice) {
+      utterance.voice = spanishVoice;
+    }
   }
 
   const speakBtn = document.getElementById("btn-kumo-speak");
@@ -1083,12 +1092,22 @@ function hablarKumo(textoPersonalizado) {
   };
 
   utterance.onerror = (e) => {
-    console.warn("SpeechSynthesis error:", e);
+    if (e.error !== "canceled" && e.error !== "interrupted") {
+      console.warn("SpeechSynthesis error:", e);
+    }
     detenerKumoVoz();
   };
 
   window.speechSynthesis.speak(utterance);
 }
+
+// Detener voz si la aplicación pasa a segundo plano
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && kumoSpeaking) {
+    detenerKumoVoz();
+  }
+});
+
 
 const DEFAULT_VOICE_SETTINGS = {
   enabled: false,
