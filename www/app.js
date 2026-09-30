@@ -120,8 +120,18 @@ btnRefresh.addEventListener("click", () => {
 });
 
 // ==========================================
-// 0. GESTIÓN DE PERFIL Y NOMBRE DE USUARIO
+// 0. GESTIÓN DE PERFIL, SEGURIDAD Y NOMBRE DE USUARIO
 // ==========================================
+function sanitizeHtml(str) {
+  if (typeof str !== "string") return "";
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function getUserName() {
   return localStorage.getItem("skybrief_user_name") || "";
 }
@@ -153,11 +163,12 @@ function initUserProfile() {
 
   if (saveBtn && nameInput) {
     saveBtn.onclick = () => {
-      const name = nameInput.value.trim();
-      if (name) {
-        localStorage.setItem("skybrief_user_name", name);
+      const rawName = nameInput.value.trim();
+      const cleanName = sanitizeHtml(rawName).slice(0, 20);
+      if (cleanName) {
+        localStorage.setItem("skybrief_user_name", cleanName);
         if (modal) modal.style.display = "none";
-        updateHeaderGreeting(name);
+        updateHeaderGreeting(cleanName);
         procesarReporteCompleto();
       }
     };
@@ -355,14 +366,14 @@ function analizarCambioIntradia(hourlyData, schedule) {
     return { tempManana: null, tempTarde: null, difTemp: 0, aviso: null };
   }
 
-  // Índices de referencia del día actual: 10:00 AM y 19:00 PM
-  const horaManana = schedule?.morning ?? 10;
-  const horaTarde = schedule?.afternoon ? Math.max(schedule.afternoon, 19) : 19;
+  // Horas configuradas por el usuario (o valores por defecto)
+  const horaManana = (schedule?.morning !== undefined && !isNaN(schedule.morning)) ? schedule.morning : 9;
+  const horaTarde = (schedule?.afternoon !== undefined && !isNaN(schedule.afternoon)) ? schedule.afternoon : 15;
 
-  const tempManana = Math.round(hourlyData.temperature_2m[horaManana] ?? hourlyData.temperature_2m[10] ?? 15);
-  const tempTarde = Math.round(hourlyData.temperature_2m[horaTarde] ?? hourlyData.temperature_2m[19] ?? tempManana);
-  const lluviaManana = hourlyData.precipitation_probability?.[horaManana] ?? hourlyData.precipitation_probability?.[10] ?? 0;
-  const lluviaTarde = hourlyData.precipitation_probability?.[horaTarde] ?? hourlyData.precipitation_probability?.[19] ?? 0;
+  const tempManana = Math.round(hourlyData.temperature_2m[horaManana] ?? hourlyData.temperature_2m[9] ?? 15);
+  const tempTarde = Math.round(hourlyData.temperature_2m[horaTarde] ?? hourlyData.temperature_2m[15] ?? tempManana);
+  const lluviaManana = hourlyData.precipitation_probability?.[horaManana] ?? hourlyData.precipitation_probability?.[9] ?? 0;
+  const lluviaTarde = hourlyData.precipitation_probability?.[horaTarde] ?? hourlyData.precipitation_probability?.[15] ?? 0;
 
   const difTemp = Math.round(tempTarde - tempManana);
   let avisoIntradia = null;
@@ -377,7 +388,8 @@ function analizarCambioIntradia(hourlyData, schedule) {
   }
   // Mañana seca pero tarde con lluvia
   else if (lluviaManana < 20 && lluviaTarde >= 50) {
-    avisoIntradia = `Cambio de tiempo: La mañana será seca, pero la lluvia entrará sobre las ${horaTarde}:00 (${lluviaTarde}% prob.). No olvides el paraguas.`;
+    const horaTardeFormatted = `${String(horaTarde).padStart(2, "0")}:00`;
+    avisoIntradia = `Cambio de tiempo: La mañana será seca, pero la lluvia entrará sobre las ${horaTardeFormatted} (${lluviaTarde}% prob.). No olvides el paraguas.`;
   }
 
   return {
@@ -405,10 +417,10 @@ function getDrivingAlert(weatherData) {
     };
   }
 
-  const tMin = weatherData.daily?.temperature_2m_min?.[0] ?? Math.round(weatherData.current?.temperature_2m ?? 10);
-  const currentTemp = Math.round(weatherData.current?.temperature_2m ?? 15);
-  const lluvia = weatherData.daily?.precipitation_probability_max?.[0] ?? 0;
-  const viento = Math.round(weatherData.current?.wind_speed_10m ?? weatherData.current_weather?.windspeed ?? 10);
+  const currentTemp = Math.round(weatherData.current?.temperature_2m ?? weatherData.current_weather?.temperature ?? 15);
+  const tMin = weatherData.daily?.temperature_2m_min?.[0] ?? currentTemp;
+  const lluvia = weatherData.daily?.precipitation_probability_max?.[0] ?? weatherData.current?.precipitation ?? 0;
+  const viento = Math.round(weatherData.current?.wind_speed_10m ?? weatherData.current_weather?.windspeed ?? weatherData.daily?.wind_speed_10m_max?.[0] ?? 10);
   const weatherCode = weatherData.current?.weather_code ?? weatherData.current_weather?.weathercode ?? weatherData.daily?.weather_code?.[0] ?? 0;
 
   let roadStatus = "Asfalto Seco • Tracción 100%";
@@ -834,10 +846,11 @@ async function procesarReporteCompleto() {
   if (kumoMoodTag) kumoMoodTag.textContent = moodLabels[currentMood] || "Directa & práctica";
 
   alertText.textContent = resultado.mensaje || resultado.consejo || "Día estable.";
-  itemsList.innerHTML = resultado.items.map(i => `<span class="pill">${i}</span>`).join("");
-  paletteContainer.innerHTML = resultado.paleta.map(hex => 
-    `<div class="swatch" style="background:${hex};">${hex}</div>`
-  ).join("");
+  itemsList.innerHTML = (resultado.items || []).map(i => `<span class="pill">${sanitizeHtml(String(i))}</span>`).join("");
+  paletteContainer.innerHTML = (resultado.paleta || []).map(hex => {
+    const safeHex = sanitizeHtml(String(hex));
+    return `<div class="swatch" style="background:${safeHex};">${safeHex}</div>`;
+  }).join("");
 
   // Manejo de la Tarjeta de Predicción Intradía (solo si el cambio es significativo)
   const cambio = analizarCambioIntradia(clima.hourly, schedule);
@@ -888,9 +901,7 @@ async function procesarReporteCompleto() {
   await verificarAlertasCriticas(clima);
 
   // Sincronizar avisos con los datos y temperaturas meteorológicas frescas
-  if (localStorage.getItem("skybrief_user_schedule")) {
-    programarAvisosBriefing(schedule);
-  }
+  await programarAvisosBriefing(schedule);
 }
 
 // ==========================================
@@ -913,16 +924,17 @@ async function verificarAlertasCriticas(weatherData) {
   const lat = typeof coordsActuales !== "undefined" && coordsActuales.lat ? coordsActuales.lat : USER_LAT;
   const lon = typeof coordsActuales !== "undefined" && coordsActuales.lon ? coordsActuales.lon : USER_LON;
 
-  // 1. Verificación Sísmica (API USGS: magnitud >= 3.0 en radio de 300km)
+  // 1. Verificación Sísmica (API USGS: últimas 24 horas, magnitud >= 3.5 en radio de 250km)
   try {
-    const sismoUrl = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${lat}&longitude=${lon}&maxradiuskm=300&minmagnitude=3.0`;
+    const startTime = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const sismoUrl = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${lat}&longitude=${lon}&maxradiuskm=250&minmagnitude=3.5&starttime=${startTime}`;
     const sismoRes = await fetch(sismoUrl);
     const sismoData = await sismoRes.json();
 
     if (sismoData.features && sismoData.features.length > 0) {
       const sismo = sismoData.features[0].properties;
       alertaActiva = true;
-      subtitulo = "Alerta Sísmica Reciente";
+      subtitulo = "Alerta Sísmica Reciente (Últimas 24h)";
       textoAlerta = `Registrado sismo M ${sismo.mag} en ${sismo.place}.`;
     }
   } catch (err) {
@@ -1111,7 +1123,7 @@ function obtenerMetricasClimaNotificacion() {
   };
 }
 
-// Programar los 3 avisos diarios (Mañana, Tarde, Noche) en Capacitor con temperaturas completas
+// Programar los 3 avisos diarios (Mañana, Tarde, Noche) en Capacitor con temperaturas completas y repetición diaria
 async function programarAvisosBriefing(schedule) {
   const LocalNotifications = window.Capacitor?.Plugins?.LocalNotifications;
   if (!LocalNotifications) return;
@@ -1127,7 +1139,7 @@ async function programarAvisosBriefing(schedule) {
       await LocalNotifications.cancel({ notifications: [{ id: 101 }, { id: 102 }, { id: 103 }] });
     } catch (e) {}
 
-    // Programar los 3 avisos con datos específicos de temperatura
+    // Programar los 3 avisos con repetición diaria estricta
     await LocalNotifications.schedule({
       notifications: [
         {
@@ -1139,6 +1151,8 @@ async function programarAvisosBriefing(schedule) {
               hour: schedule.morning,
               minute: schedule.morningMinute
             },
+            every: "day",
+            repeats: true,
             allowWhileIdle: true
           },
           sound: "beep.wav",
@@ -1155,6 +1169,8 @@ async function programarAvisosBriefing(schedule) {
               hour: schedule.afternoon,
               minute: schedule.afternoonMinute
             },
+            every: "day",
+            repeats: true,
             allowWhileIdle: true
           },
           sound: "beep.wav",
@@ -1171,6 +1187,8 @@ async function programarAvisosBriefing(schedule) {
               hour: schedule.night,
               minute: schedule.nightMinute
             },
+            every: "day",
+            repeats: true,
             allowWhileIdle: true
           },
           sound: "beep.wav",
@@ -1185,7 +1203,7 @@ async function programarAvisosBriefing(schedule) {
   }
 }
 
-// Alarma matutina personalizada con temperaturas completas
+// Alarma matutina personalizada con temperaturas completas y repetición diaria
 async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
   const LocalNotifications = window.Capacitor?.Plugins?.LocalNotifications;
   const m = obtenerMetricasClimaNotificacion();
@@ -1216,6 +1234,8 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
               hour: horas,
               minute: minutos
             },
+            every: "day",
+            repeats: true,
             allowWhileIdle: true
           },
           sound: "beep.wav",
@@ -1258,7 +1278,7 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
   }
 }
 
-// Guardia anti-duplicados por día en navegador Web / PWA
+// Guardia anti-duplicados por día en navegador Web / PWA con ventana tolerante a throttling
 function verificarDisparoWebNotif(timeStr, keySuffix, titleFn, bodyFn) {
   if (!timeStr) return;
   const now = new Date();
@@ -1267,7 +1287,10 @@ function verificarDisparoWebNotif(timeStr, keySuffix, titleFn, bodyFn) {
   if (localStorage.getItem(storageKey) === todayKey) return;
 
   const [tH, tM] = timeStr.split(":").map(Number);
-  if (now.getHours() === tH && now.getMinutes() === tM) {
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const targetMinutes = tH * 60 + tM;
+
+  if (currentMinutes >= targetMinutes && currentMinutes <= targetMinutes + 2) {
     localStorage.setItem(storageKey, todayKey);
     const m = obtenerMetricasClimaNotificacion();
     new Notification(titleFn(m), {
