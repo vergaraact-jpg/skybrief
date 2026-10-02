@@ -983,6 +983,9 @@ async function procesarReporteCompleto() {
   // Renderizar la previsión por horas para las próximas 24 horas
   renderizarPrevisionHoraria(clima.hourly);
 
+  // Renderizar La Pizarra de Kumo (Estimación semanal 7 días)
+  renderizarPizarraSemanal(clima.daily);
+
   // Comprobar alertas críticas (Sismos USGS y clima extremo)
   await verificarAlertasCriticas(clima);
 
@@ -1058,6 +1061,118 @@ function renderizarPrevisionHoraria(hourlyData) {
   }
 
   container.innerHTML = next24.join("");
+}
+
+// ==========================================
+// 6.05 LA PIZARRA DE KUMO (CRONOLOGÍA Y ESTIMACIÓN 7 DÍAS)
+// ==========================================
+function renderizarPizarraSemanal(dailyData) {
+  const container = document.getElementById("weekly-days-container");
+  const trendTextElem = document.getElementById("weekly-trend-text");
+  const disclaimerElem = document.getElementById("weekly-disclaimer-text");
+
+  if (disclaimerElem) {
+    const saludo = getKumoGreeting();
+    disclaimerElem.innerHTML = `¡${sanitizeHtml(saludo)}! Este apartado es una <strong>estimación meteorológica</strong> de lunes a domingo para ayudarte a organizar tu semana con antelación.`;
+  }
+
+  if (!container) return;
+
+  if (!dailyData || !dailyData.time || !dailyData.temperature_2m_max || !dailyData.temperature_2m_min) {
+    container.innerHTML = `<div class="weekly-loading">No hay datos semanales disponibles.</div>`;
+    return;
+  }
+
+  const diasSemanaNombres = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+  const diasSemanaCortos = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+  const mesesNombres = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
+  const numDias = Math.min(7, dailyData.time.length);
+  const mins = dailyData.temperature_2m_min.slice(0, numDias).map(Number);
+  const maxs = dailyData.temperature_2m_max.slice(0, numDias).map(Number);
+
+  const globalMin = Math.min(...mins);
+  const globalMax = Math.max(...maxs);
+  const spanTotal = Math.max(1, globalMax - globalMin);
+
+  // 1. Generar análisis y tendencia de Kumo para la semana
+  const diasLluvia = (dailyData.precipitation_probability_max || [])
+    .slice(0, numDias)
+    .filter(p => Number(p) >= 45).length;
+
+  let resumenTendencia = "";
+  if (diasLluvia >= 3) {
+    resumenTendencia = `Semana inestable: Se prevén precipitaciones en ${diasLluvia} días de la semana. Lleva paraguas o chubasquero en tus salidas.`;
+  } else if (diasLluvia >= 1) {
+    resumenTendencia = `Semana mayormente estable con episodios aislados de lluvia (${diasLluvia} ${diasLluvia > 1 ? "días probables" : "día probable"}).`;
+  } else if (globalMax >= 29) {
+    resumenTendencia = `Semana calurosa con máximas de hasta ${formatTemp(globalMax)}. Se recomienda ropa fresca e hidratación continua.`;
+  } else if (globalMin <= 6) {
+    resumenTendencia = `Semana fría con mínimas que caerán a ${formatTemp(globalMin)}. Las mañanas y noches requerirán abrigo estructurado.`;
+  } else if (globalMax - globalMin >= 13) {
+    resumenTendencia = `Semana de gran amplitud térmica (${formatTemp(globalMin)} a ${formatTemp(globalMax)}). Viste en capas fácilmente adaptables.`;
+  } else {
+    resumenTendencia = `Semana templada y equilibrada con temperaturas entre ${formatTemp(globalMin)} y ${formatTemp(globalMax)}.`;
+  }
+
+  if (trendTextElem) {
+    trendTextElem.textContent = resumenTendencia;
+  }
+
+  // 2. Renderizar filas de los 7 días
+  const filasHtml = [];
+
+  for (let i = 0; i < numDias; i++) {
+    // Parsear fecha ISO (e.g. "2026-10-02")
+    const partesFecha = dailyData.time[i].split("-").map(Number);
+    const fechaObj = new Date(partesFecha[0], partesFecha[1] - 1, partesFecha[2]);
+    const diaSemanaIndex = fechaObj.getDay();
+    const esHoy = (i === 0);
+
+    const nombreDiaCorto = diasSemanaCortos[diaSemanaIndex];
+    const numeroDia = partesFecha[2];
+    const nombreMes = mesesNombres[partesFecha[1] - 1];
+
+    const tempMinVal = Math.round(mins[i]);
+    const tempMaxVal = Math.round(maxs[i]);
+    const tempMinStr = formatTemp(tempMinVal);
+    const tempMaxStr = formatTemp(tempMaxVal);
+
+    const popVal = dailyData.precipitation_probability_max ? Math.round(dailyData.precipitation_probability_max[i] ?? 0) : 0;
+    const weatherCode = dailyData.weather_code ? dailyData.weather_code[i] : 0;
+    const wmo = getWmoHourlyInfo(weatherCode);
+
+    // Calcular posición y ancho proporcional de la barra térmica
+    const offsetLeft = Math.max(0, Math.min(85, ((tempMinVal - globalMin) / spanTotal) * 100));
+    const widthBar = Math.max(12, Math.min(100 - offsetLeft, ((tempMaxVal - tempMinVal) / spanTotal) * 100));
+
+    filasHtml.push(`
+      <div class="weekly-day-row ${esHoy ? "today" : ""}">
+        <div class="weekly-day-name-group">
+          <div class="weekly-day-name">
+            ${esHoy ? `Hoy` : sanitizeHtml(nombreDiaCorto)}
+            ${esHoy ? `<span class="weekly-day-badge-today">HOY</span>` : ""}
+          </div>
+          <span class="weekly-day-date">${numeroDia} ${nombreMes}</span>
+        </div>
+
+        <div class="weekly-day-cond">
+          <span class="weekly-day-icon" title="${sanitizeHtml(wmo.label)}">${wmo.icon}</span>
+          ${popVal >= 20 ? `<span class="weekly-day-pop">💧${popVal}%</span>` : ""}
+        </div>
+
+        <div class="weekly-temp-section">
+          <span class="weekly-temp-min">${tempMinStr}</span>
+          <div class="temp-bar-container" title="Rango: ${tempMinStr} - ${tempMaxStr}">
+            <div class="temp-bar-fill" style="left: ${offsetLeft.toFixed(1)}%; width: ${widthBar.toFixed(1)}%;"></div>
+          </div>
+          <span class="weekly-temp-max">${tempMaxStr}</span>
+        </div>
+      </div>
+    `);
+  }
+
+  container.innerHTML = filasHtml.join("");
 }
 
 // ==========================================

@@ -1836,6 +1836,408 @@ h1 { font-size: 1.85rem; font-weight: 800; margin-top: 0.2rem; letter-spacing: -
   margin-top: 0.2rem;
 }
 
+/* ==========================================================================
+   MÓDULO SEMANAL: LA PIZARRA DE KUMO (ESTIMACIÓN CRONOLÓGICA 7 DÍAS)
+   ========================================================================== */
+.weekly-board-card {
+  background: linear-gradient(160deg, #101a28 0%, #0d1622 55%, #091018 100%);
+  border: 1.5px solid rgba(148, 163, 184, 0.22);
+  border-radius: 20px;
+  padding: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+.weekly-board-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #38bdf8 0%, #818cf8 50%, #f59e0b 100%);
+  opacity: 0.8;
+}
+
+/* Cabecera de la Pizarra */
+.board-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.board-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.board-chalk-icon {
+  font-size: 1.25rem;
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 0.35rem 0.45rem;
+  border-radius: 10px;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.board-title-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.board-title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #f8fafc;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.board-subtitle {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.board-badge-chalk {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #e2e8f0;
+  background: rgba(148, 163, 184, 0.15);
+  border: 1px dashed rgba(203, 213, 225, 0.4);
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+/* Presentación de Kumo con Tiza y Bocadillo de Estimación */
+.board-kumo-presentation {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 0.7rem 0.85rem;
+}
+
+.board-kumo-avatar-box {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+}
+
+.board-kumo-avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #38bdf8;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  background: #0f172a;
+}
+
+.board-chalk-stick {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  font-size: 0.8rem;
+  background: #0f192e;
+  border: 1.5px solid #38bdf8;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.board-kumo-speech-bubble {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.speech-bubble-tag {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #38bdf8;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.speech-bubble-text {
+  font-size: 0.77rem;
+  color: #cbd5e1;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.speech-bubble-text strong {
+  color: #f8fafc;
+  font-weight: 700;
+}
+
+/* Resumen de Tendencia Semanal de Kumo */
+.board-trend-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.12) 0%, rgba(30, 58, 138, 0.2) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 12px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.78rem;
+  color: #e2e8f0;
+  line-height: 1.35;
+}
+
+.trend-icon {
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+
+.trend-text {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+/* Lista cronológica de días */
+.weekly-days-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.weekly-loading {
+  text-align: center;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  padding: 1.2rem;
+  font-style: italic;
+}
+
+.weekly-day-row {
+  display: grid;
+  grid-template-columns: 78px 60px 1fr;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  transition: all 0.2s ease;
+}
+
+.weekly-day-row:hover {
+  background: rgba(30, 41, 59, 0.6);
+  border-color: rgba(56, 189, 248, 0.2);
+}
+
+.weekly-day-row.today {
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.16) 0%, rgba(15, 25, 46, 0.65) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-left: 3.5px solid #38bdf8;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.12);
+}
+
+.weekly-day-name-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.weekly-day-name {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #f1f5f9;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.weekly-day-badge-today {
+  font-size: 0.6rem;
+  font-weight: 800;
+  color: #0284c7;
+  background: #e0f2fe;
+  padding: 0.06rem 0.3rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.weekly-day-date {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.weekly-day-cond {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.weekly-day-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.weekly-day-pop {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #38bdf8;
+  white-space: nowrap;
+}
+
+.weekly-temp-section {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.weekly-temp-min {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #94a3b8;
+  min-width: 30px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.weekly-temp-max {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #f8fafc;
+  min-width: 30px;
+  text-align: left;
+  flex-shrink: 0;
+}
+
+.temp-bar-container {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  position: relative;
+  overflow: hidden;
+  min-width: 40px;
+}
+
+.temp-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #38bdf8 0%, #fbbf24 60%, #f43f5e 100%);
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.35);
+}
+
+/* Adaptación para Modo Claro */
+[data-theme="light"] .weekly-board-card {
+  background: linear-gradient(160deg, #ffffff 0%, #f1f5f9 60%, #e2e8f0 100%);
+  border-color: #cbd5e1;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .board-title {
+  color: #0f172a;
+}
+
+[data-theme="light"] .board-subtitle {
+  color: #64748b;
+}
+
+[data-theme="light"] .board-badge-chalk {
+  background: #f1f5f9;
+  color: #334155;
+  border-color: #94a3b8;
+}
+
+[data-theme="light"] .board-kumo-presentation {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+
+[data-theme="light"] .speech-bubble-text {
+  color: #334155;
+}
+
+[data-theme="light"] .speech-bubble-text strong {
+  color: #0f172a;
+}
+
+[data-theme="light"] .board-trend-summary {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  color: #0369a1;
+}
+
+[data-theme="light"] .trend-text {
+  color: #0f172a;
+}
+
+[data-theme="light"] .weekly-day-row {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+
+[data-theme="light"] .weekly-day-row.today {
+  background: #f0fdf4;
+  border-color: #86efac;
+  border-left-color: #10b981;
+}
+
+[data-theme="light"] .weekly-day-name {
+  color: #0f172a;
+}
+
+[data-theme="light"] .weekly-day-max {
+  color: #0f172a;
+}
+
+[data-theme="light"] .temp-bar-container {
+  background: #e2e8f0;
+}
+
+/* Responsividad para pantallas muy compactas */
+@media (max-width: 360px) {
+  .weekly-day-row {
+    grid-template-columns: 68px 52px 1fr;
+    gap: 0.35rem;
+    padding: 0.45rem 0.5rem;
+  }
+  .weekly-temp-min, .weekly-temp-max {
+    min-width: 25px;
+    font-size: 0.76rem;
+  }
+  .temp-bar-container {
+    min-width: 32px;
+  }
+}
+
 
 
 

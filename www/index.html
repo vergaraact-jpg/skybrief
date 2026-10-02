@@ -113,6 +113,46 @@
         </div>
       </section>
 
+      <!-- Módulo Semanal: La Pizarra de Kumo (Estimación 7 Días L-D) -->
+      <section class="section weekly-board-card" id="weekly-board-card">
+        <!-- Cabecera de la Pizarra -->
+        <div class="board-header">
+          <div class="board-title-group">
+            <span class="board-chalk-icon">📋</span>
+            <div class="board-title-text">
+              <h3 class="board-title">La Pizarra de Kumo</h3>
+              <span class="board-subtitle">Cronología y estimación semanal</span>
+            </div>
+          </div>
+          <span class="board-badge-chalk">7 DÍAS</span>
+        </div>
+
+        <!-- Presentación de Kumo con bocadillo de estimación (Disclaimer) -->
+        <div class="board-kumo-presentation">
+          <div class="board-kumo-avatar-box">
+            <img src="icons/kumo-avatar.png" alt="Kumo Maestra" class="board-kumo-avatar-img" />
+            <span class="board-chalk-stick" title="Kumo explicando en la pizarra">✏️</span>
+          </div>
+          <div class="board-kumo-speech-bubble">
+            <div class="speech-bubble-tag">💡 NOTA DE KUMO</div>
+            <p class="speech-bubble-text" id="weekly-disclaimer-text">
+              ¡Hola! Este apartado es una <strong>estimación meteorológica</strong> de lunes a domingo para ayudarte a organizar tu semana con antelación.
+            </p>
+          </div>
+        </div>
+
+        <!-- Resumen de Tendencia Semanal de Kumo -->
+        <div class="board-trend-summary" id="weekly-trend-summary">
+          <span class="trend-icon">🔮</span>
+          <span class="trend-text" id="weekly-trend-text">Calculando tendencia semanal...</span>
+        </div>
+
+        <!-- Lista cronológica de los 7 días con barras térmicas -->
+        <div class="weekly-days-list" id="weekly-days-container">
+          <div class="weekly-loading">Preparando la pizarra semanal...</div>
+        </div>
+      </section>
+
       <!-- Banner de Acceso a Modo Pro / Funciones IA -->
       <div id="pro-feature-banner" class="pro-feature-banner" role="button" tabindex="0" title="Abrir Ajustes y Funciones Pro">
         <div class="pro-banner-left">
