@@ -26,6 +26,40 @@
     </div>
   </div>
 
+  <!-- Modal: guardar y gestionar sitios -->
+  <div id="place-modal" class="place-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="place-modal-title">
+    <div class="place-modal-card">
+      <div class="place-modal-head">
+        <h3 id="place-modal-title">📍 Guardar un sitio</h3>
+        <button id="place-modal-close" class="icon-btn" type="button" title="Cerrar">✕</button>
+      </div>
+
+      <div class="place-presets" id="place-presets">
+        <button type="button" class="place-preset active" data-icon="🏠" data-name="Casa">🏠 Casa</button>
+        <button type="button" class="place-preset" data-icon="💼" data-name="Trabajo">💼 Trabajo</button>
+        <button type="button" class="place-preset" data-icon="⭐" data-name="">⭐ Otro</button>
+      </div>
+
+      <label class="place-label" for="place-name-input">Nombre (opcional)</label>
+      <input type="text" id="place-name-input" class="place-input" placeholder="Ej. Casa de mamá (si lo dejas vacío, usa el nombre del lugar)" maxlength="24" />
+
+      <label class="place-label" for="place-search-input">¿Dónde está?</label>
+      <div class="place-search-row">
+        <input type="text" id="place-search-input" class="place-input" placeholder="Ciudad, barrio o dirección..." />
+        <button id="place-search-btn" class="btn-secondary" type="button">Buscar</button>
+      </div>
+      <button id="place-use-current" class="place-current-btn" type="button">📍 Usar mi ubicación actual</button>
+
+      <div id="place-results" class="place-results"></div>
+      <div id="place-selected" class="place-selected" style="display: none;"></div>
+      <p id="place-status" class="place-status"></p>
+
+      <button id="place-save-btn" class="place-save-btn" type="button" disabled>Guardar sitio</button>
+
+      <div id="place-saved-list" class="place-saved-list"></div>
+    </div>
+  </div>
+
   <div class="app-container">
     
     <!-- Banner de Calidad del Aire -->
@@ -64,6 +98,9 @@
         <h1 id="city-title">Tu Ubicación</h1>
         <p id="temp-display" class="temp">--°C</p>
       </header>
+
+      <!-- Sitios guardados: ubicación actual + Casa, Trabajo o los que quieras -->
+      <nav id="places-bar" class="places-bar" aria-label="Sitios guardados"></nav>
 
       <!-- Selector de Transporte -->
       <div class="transport-selector">

@@ -163,7 +163,11 @@ if (btnSaveKey && apiKeyInput) {
 
 if (btnRefresh) {
   btnRefresh.addEventListener("click", () => {
-    iniciarApp();
+    if (typeof refrescarClimaActual === "function") {
+      refrescarClimaActual();
+    } else {
+      iniciarApp();
+    }
   });
 }
 
@@ -1741,6 +1745,7 @@ function initSidebar() {
       btn.classList.add("active");
       localStorage.setItem("skybrief_unit_temp", btn.getAttribute("data-unit"));
       procesarReporteCompleto();
+      if (typeof renderizarBarraSitios === "function") renderizarBarraSitios();
     };
   });
 
@@ -1761,10 +1766,462 @@ function initSidebar() {
   });
 }
 
+// ==========================================
+// 3.5. GESTIÓN DE SITIOS GUARDADOS (CASA, TRABAJO, SITIOS PERSONALIZADOS)
+// ==========================================
+const PLACES_STORAGE_KEY = "skybrief_saved_places";
+const ACTIVE_PLACE_KEY = "skybrief_active_place_id";
+
+let gpsCoords = null; // Coordenadas del GPS / ubicación actual
+let sitioActivoId = localStorage.getItem(ACTIVE_PLACE_KEY) || "actual";
+let sitioTemporalSeleccionado = null; // { lat, lon, ciudad }
+let presetIconoSeleccionado = "🏠";
+let presetNombreSugerido = "Casa";
+
+function getSavedPlaces() {
+  const data = localStorage.getItem(PLACES_STORAGE_KEY);
+  if (!data) return [];
+  try {
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function savePlaces(places) {
+  localStorage.setItem(PLACES_STORAGE_KEY, JSON.stringify(places));
+}
+
+function extraerNombreCiudad(item) {
+  if (!item) return "Ubicación";
+  const addr = item.address;
+  if (addr) {
+    const city = addr.city || addr.town || addr.village || addr.municipality || addr.suburb || addr.quarter;
+    const prov = addr.state || addr.province || addr.county;
+    if (city && prov && !prov.toLowerCase().includes(city.toLowerCase())) {
+      return `${city}, ${prov}`;
+    }
+    if (city) return city;
+  }
+  if (item.display_name) {
+    const parts = item.display_name.split(",").map(p => p.trim());
+    return parts.slice(0, 2).join(", ");
+  }
+  return "Ubicación";
+}
+
+async function cargarClimaLugar(lugar, id = "actual") {
+  sitioActivoId = id;
+  localStorage.setItem(ACTIVE_PLACE_KEY, id);
+
+  coordsActuales = {
+    lat: lugar.lat,
+    lon: lugar.lon,
+    city: lugar.nombre || lugar.city || lugar.ciudad || "Ubicación"
+  };
+
+  if (cityTitle) cityTitle.textContent = coordsActuales.city;
+  if (tempDisplay) tempDisplay.textContent = "...";
+
+  inicializarMapa(coordsActuales.lat, coordsActuales.lon);
+  renderizarBarraSitios();
+
+  try {
+    datosMeteorologicos = await getWeatherData(coordsActuales.lat, coordsActuales.lon);
+    window.__ultimaCargaClima = Date.now();
+    verificarAlertasCriticas(datosMeteorologicos.clima);
+    await procesarReporteCompleto();
+
+    // Actualizar temperatura en el chip correspondiente si es un sitio guardado
+    if (id !== "actual") {
+      const places = getSavedPlaces();
+      const p = places.find(x => x.id === id);
+      if (p) {
+        const t = Math.round(datosMeteorologicos.clima.current?.temperature_2m ?? datosMeteorologicos.clima.current_weather?.temperature ?? 20);
+        p.temp = t;
+        savePlaces(places);
+        renderizarBarraSitios();
+      }
+    }
+  } catch (err) {
+    console.error("Error al obtener clima del lugar:", err);
+    if (alertText) alertText.textContent = "Error al conectar con los servicios de clima.";
+  }
+}
+
+function renderizarBarraSitios() {
+  const bar = document.getElementById("places-bar");
+  if (!bar) return;
+
+  const places = getSavedPlaces();
+  const esActualActivo = (sitioActivoId === "actual");
+
+  let tempActualHtml = "";
+  if (datosMeteorologicos && datosMeteorologicos.clima && esActualActivo) {
+    const t = Math.round(datosMeteorologicos.clima.current?.temperature_2m ?? datosMeteorologicos.clima.current_weather?.temperature ?? 20);
+    tempActualHtml = `<span class="place-chip-temp">${formatTemp(t)}</span>`;
+  }
+
+  let html = `
+    <button type="button" class="place-chip ${esActualActivo ? "active" : ""}" data-place-id="actual">
+      <span>📍</span>
+      <span class="place-chip-name">Mi Ubicación</span>
+      ${tempActualHtml}
+    </button>
+  `;
+
+  places.forEach(p => {
+    const activo = (sitioActivoId === p.id);
+    const tempHtml = (p.temp !== null && p.temp !== undefined)
+      ? `<span class="place-chip-temp">${formatTemp(p.temp)}</span>`
+      : "";
+    const labelNombre = p.nombre || p.ciudad || "Sitio";
+    html += `
+      <button type="button" class="place-chip ${activo ? "active" : ""}" data-place-id="${p.id}" title="${sanitizeHtml(labelNombre)} (${sanitizeHtml(p.ciudad || "")})">
+        <span>${p.icono || "📍"}</span>
+        <span class="place-chip-name">${sanitizeHtml(labelNombre)}</span>
+        ${tempHtml}
+      </button>
+    `;
+  });
+
+  html += `
+    <button type="button" class="place-chip add" id="btn-open-place-modal" title="Guardar un sitio nuevo (Casa, Trabajo...)">
+      <span>➕</span>
+      <span>Añadir</span>
+    </button>
+  `;
+
+  bar.innerHTML = html;
+
+  // Listeners de los chips
+  bar.querySelectorAll(".place-chip[data-place-id]").forEach(btn => {
+    btn.onclick = async () => {
+      const pid = btn.getAttribute("data-place-id");
+      if (pid === "actual") {
+        if (!gpsCoords) {
+          if (cityTitle) cityTitle.textContent = "Localizando...";
+          gpsCoords = await obtenerUbicacion();
+        }
+        await cargarClimaLugar(gpsCoords, "actual");
+      } else {
+        const found = getSavedPlaces().find(x => x.id === pid);
+        if (found) {
+          await cargarClimaLugar(found, found.id);
+        }
+      }
+    };
+  });
+
+  const addBtn = document.getElementById("btn-open-place-modal");
+  if (addBtn) {
+    addBtn.onclick = abrirModalSitios;
+  }
+}
+
+async function refrescarTemperaturasSitios() {
+  const places = getSavedPlaces();
+  if (!places.length) return;
+
+  let modificado = false;
+  await Promise.all(places.map(async (p) => {
+    try {
+      const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${p.lat}&longitude=${p.lon}&current=temperature_2m&timezone=auto`);
+      if (res.ok) {
+        const data = await res.json();
+        const t = Math.round(data.current?.temperature_2m ?? 20);
+        if (p.temp !== t) {
+          p.temp = t;
+          modificado = true;
+        }
+      }
+    } catch (e) {}
+  }));
+
+  if (modificado) {
+    savePlaces(places);
+    renderizarBarraSitios();
+  }
+}
+
+async function refrescarClimaActual() {
+  if (sitioActivoId === "actual" || !sitioActivoId) {
+    if (cityTitle) cityTitle.textContent = "Localizando...";
+    gpsCoords = await obtenerUbicacion();
+    await cargarClimaLugar(gpsCoords, "actual");
+  } else {
+    const places = getSavedPlaces();
+    const found = places.find(p => p.id === sitioActivoId);
+    if (found) {
+      await cargarClimaLugar(found, found.id);
+    } else {
+      if (cityTitle) cityTitle.textContent = "Localizando...";
+      gpsCoords = await obtenerUbicacion();
+      await cargarClimaLugar(gpsCoords, "actual");
+    }
+  }
+  refrescarTemperaturasSitios();
+}
+
+function abrirModalSitios() {
+  const modal = document.getElementById("place-modal");
+  if (!modal) return;
+
+  sitioTemporalSeleccionado = null;
+  const statusElem = document.getElementById("place-status");
+  const selectedElem = document.getElementById("place-selected");
+  const resultsElem = document.getElementById("place-results");
+  const saveBtn = document.getElementById("place-save-btn");
+  const searchInput = document.getElementById("place-search-input");
+  const nameInput = document.getElementById("place-name-input");
+
+  if (statusElem) statusElem.textContent = "";
+  if (selectedElem) {
+    selectedElem.style.display = "none";
+    selectedElem.innerHTML = "";
+  }
+  if (resultsElem) resultsElem.innerHTML = "";
+  if (saveBtn) saveBtn.disabled = true;
+  if (searchInput) searchInput.value = "";
+  if (nameInput) nameInput.value = presetNombreSugerido;
+
+  // Restablecer preset a Casa o el primero activo
+  const presetBtns = document.querySelectorAll("#place-presets .place-preset");
+  presetBtns.forEach((btn, idx) => {
+    if (idx === 0) {
+      btn.classList.add("active");
+      presetIconoSeleccionado = btn.getAttribute("data-icon") || "🏠";
+      presetNombreSugerido = btn.getAttribute("data-name") || "Casa";
+      if (nameInput) nameInput.value = presetNombreSugerido;
+    } else {
+      btn.classList.remove("active");
+    }
+  });
+
+  renderizarListaSitiosModal();
+  modal.style.display = "flex";
+  if (searchInput) setTimeout(() => searchInput.focus(), 150);
+}
+
+function cerrarModalSitios() {
+  const modal = document.getElementById("place-modal");
+  if (modal) modal.style.display = "none";
+}
+
+function renderizarListaSitiosModal() {
+  const listElem = document.getElementById("place-saved-list");
+  if (!listElem) return;
+
+  const places = getSavedPlaces();
+  if (places.length === 0) {
+    listElem.innerHTML = "";
+    return;
+  }
+
+  let html = `<div class="place-saved-title">Tus sitios guardados (${places.length})</div>`;
+  places.forEach(p => {
+    const tempInfo = (p.temp !== null && p.temp !== undefined) ? ` • ${formatTemp(p.temp)}` : "";
+    html += `
+      <div class="place-saved-item">
+        <div>
+          <strong>${p.icono || "📍"} ${sanitizeHtml(p.nombre || p.ciudad)}</strong>${tempInfo}
+          <small>${sanitizeHtml(p.ciudad || "")}</small>
+        </div>
+        <button type="button" class="place-delete-btn" data-delete-id="${p.id}" title="Eliminar sitio">🗑️</button>
+      </div>
+    `;
+  });
+
+  listElem.innerHTML = html;
+
+  listElem.querySelectorAll(".place-delete-btn").forEach(btn => {
+    btn.onclick = async () => {
+      const pid = btn.getAttribute("data-delete-id");
+      const placesActuales = getSavedPlaces();
+      const filtrados = placesActuales.filter(x => x.id !== pid);
+      savePlaces(filtrados);
+      renderizarListaSitiosModal();
+      renderizarBarraSitios();
+
+      // Si el que se borró era el activo, volvemos a la ubicación actual
+      if (sitioActivoId === pid) {
+        if (!gpsCoords) gpsCoords = await obtenerUbicacion();
+        await cargarClimaLugar(gpsCoords, "actual");
+      }
+    };
+  });
+}
+
+function initPlacesModal() {
+  const modal = document.getElementById("place-modal");
+  const closeBtn = document.getElementById("place-modal-close");
+  const presetBtns = document.querySelectorAll("#place-presets .place-preset");
+  const searchInput = document.getElementById("place-search-input");
+  const searchBtn = document.getElementById("place-search-btn");
+  const useCurrentBtn = document.getElementById("place-use-current");
+  const nameInput = document.getElementById("place-name-input");
+  const saveBtn = document.getElementById("place-save-btn");
+  const selectedElem = document.getElementById("place-selected");
+  const resultsElem = document.getElementById("place-results");
+  const statusElem = document.getElementById("place-status");
+
+  if (closeBtn) closeBtn.onclick = cerrarModalSitios;
+  if (modal) {
+    modal.onclick = (e) => {
+      if (e.target === modal) cerrarModalSitios();
+    };
+  }
+
+  // Presets: Casa, Trabajo, Otro
+  presetBtns.forEach(btn => {
+    btn.onclick = () => {
+      presetBtns.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      presetIconoSeleccionado = btn.getAttribute("data-icon") || "📍";
+      presetNombreSugerido = btn.getAttribute("data-name") || "";
+      if (nameInput) {
+        nameInput.value = presetNombreSugerido;
+        if (!presetNombreSugerido && sitioTemporalSeleccionado) {
+          nameInput.value = sitioTemporalSeleccionado.ciudad;
+        }
+      }
+    };
+  });
+
+  function seleccionarLugar(lugar) {
+    sitioTemporalSeleccionado = lugar;
+    if (selectedElem) {
+      selectedElem.style.display = "block";
+      selectedElem.innerHTML = `✓ <strong>${sanitizeHtml(lugar.ciudad)}</strong>`;
+    }
+    if (statusElem) statusElem.textContent = "";
+    if (nameInput && !nameInput.value.trim()) {
+      nameInput.value = presetNombreSugerido || lugar.ciudad;
+    }
+    if (saveBtn) saveBtn.disabled = false;
+  }
+
+  async function buscarLugares() {
+    const q = (searchInput?.value || "").trim();
+    if (!q) {
+      if (statusElem) statusElem.textContent = "Escribe un nombre de ciudad, calle o barrio.";
+      return;
+    }
+
+    if (statusElem) statusElem.textContent = "Buscando...";
+    if (resultsElem) resultsElem.innerHTML = "";
+
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&addressdetails=1`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Fallo en la búsqueda");
+      const items = await res.json();
+
+      if (!items || items.length === 0) {
+        if (statusElem) statusElem.textContent = "No se encontraron resultados para esa búsqueda.";
+        return;
+      }
+
+      if (statusElem) statusElem.textContent = "Selecciona el lugar correspondiente:";
+
+      let html = "";
+      items.forEach((item, idx) => {
+        const nombreLugar = extraerNombreCiudad(item);
+        html += `
+          <div class="place-result" data-idx="${idx}">
+            <strong>${sanitizeHtml(nombreLugar)}</strong>
+            <small>${sanitizeHtml(item.display_name)}</small>
+          </div>
+        `;
+      });
+
+      if (resultsElem) {
+        resultsElem.innerHTML = html;
+        resultsElem.querySelectorAll(".place-result").forEach(elem => {
+          elem.onclick = () => {
+            const idx = parseInt(elem.getAttribute("data-idx"), 10);
+            const elegido = items[idx];
+            seleccionarLugar({
+              lat: parseFloat(elegido.lat),
+              lon: parseFloat(elegido.lon),
+              ciudad: extraerNombreCiudad(elegido)
+            });
+            resultsElem.innerHTML = "";
+          };
+        });
+      }
+    } catch (err) {
+      console.warn("Error en búsqueda Nominatim:", err);
+      if (statusElem) statusElem.textContent = "No se pudo conectar con el buscador de lugares.";
+    }
+  }
+
+  if (searchBtn) searchBtn.onclick = buscarLugares;
+  if (searchInput) {
+    searchInput.onkeydown = (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        buscarLugares();
+      }
+    };
+  }
+
+  if (useCurrentBtn) {
+    useCurrentBtn.onclick = async () => {
+      if (statusElem) statusElem.textContent = "Obteniendo ubicación del dispositivo...";
+      let pos = gpsCoords;
+      if (!pos) {
+        pos = await obtenerUbicacion();
+        gpsCoords = pos;
+      }
+      seleccionarLugar({
+        lat: pos.lat,
+        lon: pos.lon,
+        ciudad: pos.city || "Mi Ubicación Actual"
+      });
+      if (statusElem) statusElem.textContent = "Ubicación actual seleccionada.";
+    };
+  }
+
+  if (saveBtn) {
+    saveBtn.onclick = async () => {
+      if (!sitioTemporalSeleccionado) return;
+
+      const rawNombre = (nameInput?.value || "").trim();
+      // Si el usuario no escribe nombre, se queda con el nombre original del lugar ("o que se quede con el mismo nombre")
+      const nombreFinal = rawNombre || sitioTemporalSeleccionado.ciudad;
+
+      const nuevoSitio = {
+        id: "place_" + Date.now(),
+        tipo: presetNombreSugerido.toLowerCase() || "otro",
+        icono: presetIconoSeleccionado || "📍",
+        nombre: nombreFinal,
+        ciudad: sitioTemporalSeleccionado.ciudad,
+        lat: sitioTemporalSeleccionado.lat,
+        lon: sitioTemporalSeleccionado.lon,
+        temp: null
+      };
+
+      const places = getSavedPlaces();
+      places.push(nuevoSitio);
+      savePlaces(places);
+
+      cerrarModalSitios();
+      renderizarBarraSitios();
+      refrescarTemperaturasSitios();
+
+      // Cargar inmediatamente el tiempo de este nuevo sitio
+      await cargarClimaLugar(nuevoSitio, nuevoSitio.id);
+    };
+  }
+}
+
 async function iniciarApp() {
   initUserProfile();
   initVoiceSettings();
   initSidebar();
+  initPlacesModal();
 
   // Establecer modo de transporte por defecto
   modoTransporte = getDefaultTransport();
@@ -1779,22 +2236,23 @@ async function iniciarApp() {
   }
 
   cityTitle.textContent = "Localizando...";
-  coordsActuales = await obtenerUbicacion();
-  cityTitle.textContent = coordsActuales.city;
+  gpsCoords = await obtenerUbicacion();
 
-  inicializarMapa(coordsActuales.lat, coordsActuales.lon);
-  restaurarInputsHorarios();
+  // Inicializar barra de sitios
+  renderizarBarraSitios();
 
-  try {
-    datosMeteorologicos = await getWeatherData(coordsActuales.lat, coordsActuales.lon);
-    window.__ultimaCargaClima = Date.now();
-    // Tras procesar open-meteo:
-    verificarAlertasCriticas(datosMeteorologicos.clima);
-    await procesarReporteCompleto();
-  } catch (err) {
-    console.error("Error al conectar con los servicios de clima:", err);
-    alertText.textContent = "Error al conectar con los servicios de clima.";
+  // Si había un sitio guardado activo, cargamos ese sitio; si no, la ubicación actual
+  const places = getSavedPlaces();
+  const savedActivo = places.find(p => p.id === sitioActivoId);
+
+  if (savedActivo) {
+    await cargarClimaLugar(savedActivo, savedActivo.id);
+  } else {
+    await cargarClimaLugar(gpsCoords, "actual");
   }
+
+  restaurarInputsHorarios();
+  refrescarTemperaturasSitios();
 }
 
 // Inicialización segura contra estado de carga del DOM
