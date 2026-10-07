@@ -73,6 +73,41 @@ function analizarCambioIntradia(hourlyData) {
   };
 }
 
+// Misma lógica que la app: códigos de tormenta + energía convectiva (CAPE) + precipitación
+function evaluarTormenta(wData, horas = 18) {
+  const res = { nivel: 0, hora: "" };
+  const h = wData.hourly;
+  if (!h || !h.time) return res;
+
+  const ahora = Date.now();
+  let start = h.time.findIndex(t => new Date(t).getTime() >= ahora - 3600000);
+  if (start < 0) start = 0;
+  const end = Math.min(start + horas, h.time.length);
+
+  let maxCape = 0, capeIdx = -1, probMax = 0, mm = 0, chubasco = false;
+  const fmt = i => String(new Date(h.time[i]).getHours()).padStart(2, "0") + ":00";
+
+  for (let i = start; i < end; i++) {
+    const code = h.weathercode?.[i] ?? 0;
+    const cape = h.cape?.[i] ?? 0;
+    probMax = Math.max(probMax, h.precipitation_probability?.[i] ?? 0);
+    mm += h.precipitation?.[i] ?? 0;
+    if (cape > maxCape) { maxCape = cape; capeIdx = i; }
+    if (code >= 80 && code <= 82) chubasco = true;
+    if ([95, 96, 99].includes(code) && res.nivel < 2) {
+      res.nivel = 2;
+      res.hora = fmt(i);
+    }
+  }
+  if ([95, 96, 99].includes(wData.current_weather?.weathercode) && res.nivel < 2) res.nivel = 2;
+
+  if (res.nivel < 2 && ((maxCape >= 1500 && (probMax >= 10 || mm >= 0.5)) || (maxCape >= 800 && chubasco) || maxCape >= 2500)) {
+    res.nivel = 1;
+    res.hora = capeIdx >= 0 ? fmt(capeIdx) : "";
+  }
+  return res;
+}
+
 function extractJsonFromText(rawText) {
   if (!rawText) return null;
   const trimmed = rawText.trim();
@@ -106,8 +141,8 @@ async function run() {
     return;
   }
 
-  // 1. Obtener métricas ampliadas de Open-Meteo (incluye hourly para análisis intradía)
-  const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=temperature_2m,precipitation_probability,weathercode&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max&current_weather=true&timezone=auto`;
+  // 1. Obtener métricas ampliadas de Open-Meteo (incluye hourly para análisis intradía y tormentas)
+  const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=temperature_2m,precipitation_probability,precipitation,cape,weathercode&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max&current_weather=true&timezone=auto`;
   const wRes = await fetch(weatherUrl);
   if (!wRes.ok) throw new Error(`Fallo Open-Meteo: ${wRes.status}`);
   const wData = await wRes.json();
@@ -115,10 +150,40 @@ async function run() {
   const tempActual = Math.round(wData.current_weather.temperature);
   const tempMin = Math.round(wData.daily.temperature_2m_min[0]);
   const tempMax = Math.round(wData.daily.temperature_2m_max[0]);
-  const lluviaProb = wData.daily.precipitation_probability_max[0];
+  const lluviaProbDiaria = wData.daily.precipitation_probability_max[0];
   const vientoMax = Math.round(wData.daily.windspeed_10m_max[0]);
-  const weatherCode = wData.current_weather.weathercode;
   const intradia = analizarCambioIntradia(wData.hourly);
+
+  // Riesgo de tormenta: la probabilidad de lluvia infravalora las tormentas convectivas
+  const storm = evaluarTormenta(wData);
+  const lluviaProb = storm.nivel >= 1 ? Math.max(lluviaProbDiaria, storm.nivel >= 2 ? 85 : 55) : lluviaProbDiaria;
+  const weatherCode = storm.nivel >= 2 ? 95 : wData.current_weather.weathercode;
+
+  if (process.env.MODE === "storm" && storm.nivel === 0) {
+    console.log("Modo tormentas: sin riesgo de tormenta, no se envía aviso.");
+    return;
+  }
+
+  if (process.env.MODE === "storm") {
+    const titulo = storm.nivel >= 2 ? "🔴⛈️ ALERTA ROJA: TORMENTA" : "🟠⚡ RIESGO DE TORMENTA";
+    const cuerpo = storm.nivel >= 2
+      ? `Tormenta eléctrica prevista${storm.hora ? ` hacia las ${storm.hora}` : ""}. Lluvia intensa y posibles truenos: lleva paraguas y evita zonas descampadas.`
+      : `Atmósfera muy inestable${storm.hora ? ` (máximo hacia las ${storm.hora})` : ""}: pueden formarse tormentas aunque la probabilidad de lluvia sea baja. Lleva paraguas.`;
+    const encoded = ` =?utf-8?B?${Buffer.from(titulo, "utf-8").toString("base64")}?=`.trim();
+    const r = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+      method: "POST",
+      body: cuerpo,
+      headers: {
+        "Title": encoded,
+        "Priority": "urgent",
+        "Tags": "rotating_light,thunder_cloud_and_rain,umbrella",
+        "Icon": "https://raw.githubusercontent.com/vergaraact-jpg/skybrief/main/icons/weather-rain.png"
+      }
+    });
+    if (!r.ok) throw new Error(`Fallo ntfy: ${r.status}`);
+    console.log("Alerta de tormenta enviada:", titulo, cuerpo);
+    return;
+  }
 
   // 2. Prompt Kumo enfocado en personalidad fresca, ropa, luz y estado vial si hay alerta
   const hasRoadHazard = lluviaProb >= 40 || tempMin <= 2 || vientoMax >= 45 || weatherCode >= 51;

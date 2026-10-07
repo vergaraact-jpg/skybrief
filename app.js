@@ -364,7 +364,7 @@ async function obtenerUbicacion() {
 
 // Endpoint con current, hourly y daily completo (incluye weather_code horario para intradía)
 async function getWeatherData(lat = 40.4168, lon = -3.7038) {
-  const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,is_day,precipitation,weather_code,wind_speed_10m,wind_gusts_10m&hourly=temperature_2m,precipitation_probability,weather_code,visibility&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,weather_code,uv_index_max&timezone=auto`;
+  const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,is_day,precipitation,weather_code,wind_speed_10m,wind_gusts_10m&hourly=temperature_2m,precipitation_probability,precipitation,cape,weather_code,visibility&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,wind_speed_10m_max,wind_gusts_10m_max,weather_code,uv_index_max&timezone=auto&forecast_days=8`;
   const airUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5`;
 
   const [resClima, resAire] = await Promise.all([
@@ -569,10 +569,13 @@ function motorNativo(clima, transporte, city, schedule) {
   let paleta = ["#38BDF8", "#94A3B8", "#0F172A"];
   let mood = "neutral";
 
-  if ([95, 96, 99].includes(weatherCode)) {
+  const riesgoTormenta = evaluarRiesgoTormenta(clima);
+
+  if ([95, 96, 99].includes(weatherCode) || riesgoTormenta.nivel >= 1) {
     mood = "alerta";
-    titular = `${city || "Madrid"} a ${displayTemp}: Tormenta eléctrica`;
-    mensaje = `${greeting}. Cielo tormentoso con actividad eléctrica y riesgo de granizo. Quédate a cubierto y calzado impermeable.`;
+    const esRoja = riesgoTormenta.nivel >= 2 || [95, 96, 99].includes(weatherCode);
+    titular = `${city || "Madrid"} a ${displayTemp}: ${esRoja ? "Alerta de tormenta" : "Riesgo de tormenta"}`;
+    mensaje = `${greeting}. ${textoRiesgoTormenta(riesgoTormenta.nivel >= 1 ? riesgoTormenta : { nivel: 2, granizo: weatherCode >= 96, horaPico: null })}`;
     items.push("Chubasquero técnico", "Calzado impermeable", "Paraguas reforzado");
     paleta = ["#1e293b", "#ef4444", "#0f172a"];
   } else if (probLluvia >= 40) {
@@ -814,6 +817,7 @@ Datos meteorológicos de ${city}:
   * Noche (${schedule.night}:00): ${tempNoche}°C
 - Análisis intradía: ${intradia.aviso || "Sin saltos bruscos térmicos ni de precipitación"}
 - Prob. lluvia: ${probLluvia}%
+- Riesgo de tormenta: ${evaluarRiesgoTormenta(clima).nivel >= 2 ? "ALTO (tormenta prevista: avísalo con claridad, mood alerta)" : evaluarRiesgoTormenta(clima).nivel === 1 ? "MEDIO (atmósfera inestable, posibles tormentas aunque el % de lluvia sea bajo: recomienda paraguas)" : "ninguno"}
 - UV: ${uv}
 - Viento: ${viento} km/h (${formatWind(viento)})
 - Modo transporte del usuario: ${transporte}
@@ -858,7 +862,9 @@ async function procesarReporteCompleto() {
   // Extraer valores meteorológicos reales de Open-Meteo
   const currentTemp = Math.round(clima.current?.temperature_2m ?? clima.current_weather?.temperature ?? 20);
   const windSpeed = Math.round(clima.current?.wind_speed_10m ?? clima.current_weather?.windspeed ?? 10);
-  const rainProb = clima.daily?.precipitation_probability_max?.[0] ?? 0;
+  const riesgoTormentaUI = evaluarRiesgoTormenta(clima);
+  const rainProbDiaria = clima.daily?.precipitation_probability_max?.[0] ?? 0;
+  const rainProb = Math.max(rainProbDiaria, riesgoTormentaUI.probEfectiva);
   const uvMax = clima.daily?.uv_index_max?.[0] ?? 0;
 
   // Pintar métricas en interfaz
@@ -869,7 +875,7 @@ async function procesarReporteCompleto() {
   if (uvElem) uvElem.textContent = uvMax;
 
   const rainElem = document.getElementById("rain-display") || document.getElementById("rain-metric");
-  if (rainElem) rainElem.textContent = `${rainProb}%`;
+  if (rainElem) rainElem.textContent = `${riesgoTormentaUI.nivel >= 1 ? "⚡ " : ""}${rainProb}%`;
 
   const tempElem = document.getElementById("temp-display");
   if (tempElem) tempElem.textContent = formatTemp(currentTemp);
@@ -1389,6 +1395,148 @@ function initVoiceSettings() {
 const USER_LAT = 40.4168;
 const USER_LON = -3.7038;
 
+const TORMENTA_CODES = [95, 96, 99];
+
+// Evalúa el riesgo de tormenta en las próximas horas. La probabilidad de lluvia de los
+// modelos infravalora las tormentas convectivas, así que se combinan: códigos WMO de
+// tormenta, energía convectiva (CAPE) y precipitación prevista.
+// nivel 0 = sin riesgo, 1 = riesgo de tormenta (vigilancia), 2 = tormenta prevista/activa (roja)
+function evaluarRiesgoTormenta(clima, horas = 18, desdeMs = Date.now()) {
+  const res = { nivel: 0, motivo: "", horaPico: null, probEfectiva: 0, granizo: false, probMax: 0 };
+  if (!clima) return res;
+
+  const h = clima.hourly;
+  const codigoActual = clima.current?.weather_code ?? clima.current_weather?.weathercode ?? 0;
+  const codigoDiario = clima.daily?.weather_code?.[0] ?? 0;
+
+  if (Math.abs(desdeMs - Date.now()) < 3600000 && TORMENTA_CODES.includes(codigoActual)) {
+    res.nivel = 2;
+    res.horaPico = new Date(desdeMs);
+    res.granizo = codigoActual >= 96;
+    res.motivo = "Tormenta activa en tu zona ahora mismo";
+  }
+
+  let probMax = 0;
+  if (h && h.time) {
+    let start = h.time.findIndex(t => new Date(t).getTime() >= desdeMs - 3600000);
+    if (start < 0) start = 0;
+    const end = Math.min(start + horas, h.time.length);
+    let maxCape = 0;
+    let capeIdx = -1;
+    let lluviaMm = 0;
+    let hayChubasco = false;
+
+    for (let i = start; i < end; i++) {
+      const code = h.weather_code?.[i] ?? 0;
+      const prob = h.precipitation_probability?.[i] ?? 0;
+      const cape = h.cape?.[i] ?? 0;
+      probMax = Math.max(probMax, prob);
+      lluviaMm += h.precipitation?.[i] ?? 0;
+      if (cape > maxCape) { maxCape = cape; capeIdx = i; }
+      if (code >= 80 && code <= 82) hayChubasco = true;
+
+      if (TORMENTA_CODES.includes(code)) {
+        if (res.nivel < 2) {
+          res.nivel = 2;
+          res.horaPico = new Date(h.time[i]);
+          res.motivo = "Tormenta eléctrica prevista";
+        }
+        if (code >= 96) res.granizo = true;
+      }
+    }
+
+    if (res.nivel < 2) {
+      const convectivo = maxCape >= 1500 && (probMax >= 10 || lluviaMm >= 0.5);
+      const chubascosInestables = maxCape >= 800 && hayChubasco;
+      const muyInestable = maxCape >= 2500;
+      if (convectivo || chubascosInestables || muyInestable) {
+        res.nivel = 1;
+        res.horaPico = capeIdx >= 0 ? new Date(h.time[capeIdx]) : null;
+        res.motivo = "Atmósfera muy inestable: pueden formarse tormentas aunque la probabilidad de lluvia parezca baja";
+      }
+    }
+  }
+
+  res.probMax = probMax;
+  res.probEfectiva = res.nivel >= 2 ? Math.max(probMax, 85) : res.nivel === 1 ? Math.max(probMax, 55) : probMax;
+  return res;
+}
+
+function formatearHoraRiesgo(fecha) {
+  if (!fecha || isNaN(fecha.getTime())) return "";
+  return `${String(fecha.getHours()).padStart(2, "0")}:${String(fecha.getMinutes()).padStart(2, "0")}`;
+}
+
+function textoRiesgoTormenta(riesgo) {
+  const hora = riesgo.horaPico && riesgo.horaPico.getTime() > Date.now() + 15 * 60000
+    ? ` Hacia las ${formatearHoraRiesgo(riesgo.horaPico)}.`
+    : "";
+  if (riesgo.nivel >= 2) {
+    return riesgo.granizo
+      ? `Tormenta con riesgo de granizo y lluvia intensa.${hora} Busca resguardo y protege vehículos. Lleva paraguas.`
+      : `Tormenta eléctrica con lluvia intensa.${hora} Evita zonas descampadas y lleva paraguas.`;
+  }
+  return `Riesgo de tormentas con lluvia fuerte y truenos.${hora} Aunque la probabilidad de lluvia sea baja, lleva paraguas.`;
+}
+
+// Notificación ROJA de alta prioridad en el panel de notificaciones del móvil
+async function notificarTormenta(riesgo) {
+  if (!riesgo || riesgo.nivel < 1) return;
+
+  // Evitar repetir el mismo aviso: una vez cada 3 horas por nivel
+  const bloque = Math.floor(Date.now() / (3 * 3600 * 1000));
+  const key = `skybrief_storm_notif_${riesgo.nivel}_${bloque}`;
+  if (localStorage.getItem(key)) return;
+
+  const esRoja = riesgo.nivel >= 2;
+  const titulo = esRoja ? "🔴⛈️ ALERTA ROJA: TORMENTA" : "🟠⚡ RIESGO DE TORMENTA";
+  const cuerpo = textoRiesgoTormenta(riesgo);
+
+  const LocalNotifications = window.Capacitor?.Plugins?.LocalNotifications;
+  if (LocalNotifications) {
+    try {
+      const permiso = await LocalNotifications.requestPermissions();
+      if (permiso.display !== "granted") return;
+
+      try {
+        await LocalNotifications.createChannel({
+          id: "skybrief_tormentas",
+          name: "Alertas de tormenta",
+          description: "Avisos urgentes de tormentas y fenómenos severos",
+          importance: 5,
+          visibility: 1,
+          vibration: true,
+          lights: true,
+          lightColor: "#FF0000"
+        });
+      } catch (e) {}
+
+      await LocalNotifications.schedule({
+        notifications: [{
+          id: 900,
+          title: titulo,
+          body: cuerpo,
+          channelId: "skybrief_tormentas",
+          schedule: { at: new Date(Date.now() + 1500), allowWhileIdle: true },
+          iconColor: "#ef4444",
+          smallIcon: "ic_stat_name",
+          largeIcon: "kumo_avatar",
+          sound: "beep.wav"
+        }]
+      });
+      localStorage.setItem(key, "1");
+    } catch (e) {
+      console.warn("No se pudo enviar la notificación de tormenta:", e);
+    }
+    return;
+  }
+
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification(titulo, { body: cuerpo, icon: "icons/kumo-avatar.png", badge: "icons/icon-192.png", requireInteraction: true });
+    localStorage.setItem(key, "1");
+  }
+}
+
 async function verificarAlertasCriticas(weatherData) {
   const banner = document.getElementById("critical-alert");
   const title = document.getElementById("alert-title");
@@ -1403,45 +1551,47 @@ async function verificarAlertasCriticas(weatherData) {
   const lat = typeof coordsActuales !== "undefined" && coordsActuales.lat ? coordsActuales.lat : USER_LAT;
   const lon = typeof coordsActuales !== "undefined" && coordsActuales.lon ? coordsActuales.lon : USER_LON;
 
-  // 1. Verificación Sísmica (API USGS: últimas 24 horas, magnitud >= 3.5 en radio de 250km)
-  try {
-    const startTime = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const sismoUrl = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${lat}&longitude=${lon}&maxradiuskm=250&minmagnitude=3.5&starttime=${startTime}`;
-    const sismoRes = await fetch(sismoUrl);
-    const sismoData = await sismoRes.json();
-
-    if (sismoData.features && sismoData.features.length > 0) {
-      const sismo = sismoData.features[0].properties;
-      alertaActiva = true;
-      subtitulo = "Alerta Sísmica Reciente (Últimas 24h)";
-      textoAlerta = `Registrado sismo M ${sismo.mag} en ${sismo.place}.`;
-    }
-  } catch (err) {
-    console.warn("No se pudo verificar USGS:", err);
+  // 0. La tormenta tiene prioridad máxima sobre cualquier otro aviso
+  const riesgoTormenta = evaluarRiesgoTormenta(weatherData);
+  if (riesgoTormenta.nivel >= 1) {
+    alertaActiva = true;
+    subtitulo = riesgoTormenta.nivel >= 2
+      ? (riesgoTormenta.granizo ? "⛈️ ALERTA ROJA: TORMENTA CON GRANIZO" : "⛈️ ALERTA ROJA: TORMENTA ELÉCTRICA")
+      : "⚡ RIESGO DE TORMENTA";
+    textoAlerta = `${riesgoTormenta.motivo}. ${textoRiesgoTormenta(riesgoTormenta)}`;
+    notificarTormenta(riesgoTormenta);
   }
 
-  // 2. Si no hay sismo, verificar fenómenos meteorológicos severos
+  // 1. Verificación Sísmica (API USGS: últimas 24 horas, magnitud >= 3.5 en radio de 250km)
+  if (!alertaActiva) {
+    try {
+      const startTime = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const sismoUrl = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${lat}&longitude=${lon}&maxradiuskm=250&minmagnitude=3.5&starttime=${startTime}`;
+      const sismoRes = await fetch(sismoUrl);
+      const sismoData = await sismoRes.json();
+
+      if (sismoData.features && sismoData.features.length > 0) {
+        const sismo = sismoData.features[0].properties;
+        alertaActiva = true;
+        subtitulo = "Alerta Sísmica Reciente (Últimas 24h)";
+        textoAlerta = `Registrado sismo M ${sismo.mag} en ${sismo.place}.`;
+      }
+    } catch (err) {
+      console.warn("No se pudo verificar USGS:", err);
+    }
+  }
+
+  // 2. Si no hay tormenta ni sismo, verificar otros fenómenos meteorológicos severos
   if (!alertaActiva && weatherData) {
     const viento = Math.round(weatherData.current_weather?.windspeed || weatherData.current?.wind_speed_10m || 0);
     const rachaMax = Math.round(weatherData.daily?.wind_gusts_10m_max?.[0] || weatherData.current?.wind_gusts_10m || viento);
     const weatherCode = weatherData.current_weather?.weathercode || weatherData.current?.weather_code || 0;
     const dailyCode = weatherData.daily?.weather_code?.[0] || 0;
-    const hourlyCodes = weatherData.hourly?.weather_code ? weatherData.hourly.weather_code.slice(0, 24) : [];
 
-    const hayTormenta = [95, 96, 99].includes(weatherCode) || [95, 96, 99].includes(dailyCode) || hourlyCodes.some(c => [95, 96, 99].includes(c));
-    const esGranizo = [96, 99].includes(weatherCode) || [96, 99].includes(dailyCode) || hourlyCodes.some(c => [96, 99].includes(c));
     const hayLluviaTorrencial = [65, 82].includes(weatherCode) || [65, 82].includes(dailyCode);
 
-    // Tormenta eléctrica fuerte o granizo (95, 96, 99)
-    if (hayTormenta) {
-      alertaActiva = true;
-      subtitulo = esGranizo ? "⚡ ALERTA: TORMENTA CON GRANIZO" : "⚡ ALERTA: TORMENTA ELÉCTRICA FUERTE";
-      textoAlerta = esGranizo
-        ? "Actividad eléctrica severa con riesgo de caída de granizo. Protege vehículos y busca resguardo seguro."
-        : "Tormenta eléctrica inminente o prevista en la zona. Evita zonas descampadas y pasos subterráneos.";
-    }
     // Vientos muy fuertes o temporal (> 65-70 km/h)
-    else if (viento >= 70 || rachaMax >= 75) {
+    if (viento >= 70 || rachaMax >= 75) {
       alertaActiva = true;
       subtitulo = "💨 ALERTA: TEMPORAL DE VIENTO SEVERO";
       textoAlerta = `Rachas violentas de ${Math.max(viento, rachaMax)} km/h. Precaución extrema por desprendimientos y en carretera.`;
@@ -1637,6 +1787,7 @@ async function iniciarApp() {
 
   try {
     datosMeteorologicos = await getWeatherData(coordsActuales.lat, coordsActuales.lon);
+    window.__ultimaCargaClima = Date.now();
     // Tras procesar open-meteo:
     verificarAlertasCriticas(datosMeteorologicos.clima);
     await procesarReporteCompleto();
@@ -1675,7 +1826,7 @@ if (localStorage.getItem("notify_time")) {
 }
 
 // Obtener estado visual del clima y métricas ampliadas para la notificación
-function obtenerMetricasClimaNotificacion() {
+function obtenerMetricasClimaNotificacion(dayIndex = 0) {
   if (!datosMeteorologicos || !datosMeteorologicos.clima) {
     return {
       condicion: "sol",
@@ -1693,38 +1844,61 @@ function obtenerMetricasClimaNotificacion() {
       tempNoche: 17,
       lluviaManana: 0,
       lluviaTarde: 0,
-      lluviaNoche: 0
+      lluviaNoche: 0,
+      tormenta: 0,
+      tormentaTexto: ""
     };
   }
 
   const { clima } = datosMeteorologicos;
   const schedule = getUserSchedule();
+  const d = Math.max(0, dayIndex);
+  const off = d * 24; // hourly[0] = hoy 00:00 (hora local de la ubicación)
 
-  const tempActual = Math.round(clima.current?.temperature_2m ?? clima.current_weather?.temperature ?? 20);
-  const tempMin = Math.round(clima.daily?.temperature_2m_min?.[0] ?? tempActual);
-  const tempMax = Math.round(clima.daily?.temperature_2m_max?.[0] ?? tempActual);
-  const lluviaProb = clima.daily?.precipitation_probability_max?.[0] ?? 0;
-  const vientoMax = Math.round(clima.daily?.wind_speed_10m_max?.[0] ?? clima.current?.wind_speed_10m ?? 10);
-  const weatherCode = clima.current?.weather_code ?? clima.current_weather?.weathercode ?? 0;
-
-  // Extraer temperaturas horarias específicas de cada tramo
+  // Mañana / tarde / noche del día pedido
   const mH = schedule.morning ?? 9;
   const aH = schedule.afternoon ?? 15;
   const nH = schedule.night ?? 21;
 
-  const tempManana = clima.hourly?.temperature_2m?.[mH] !== undefined 
-    ? Math.round(clima.hourly.temperature_2m[mH]) 
-    : tempActual;
-  const tempTarde = clima.hourly?.temperature_2m?.[aH] !== undefined 
-    ? Math.round(clima.hourly.temperature_2m[aH]) 
-    : tempMax;
-  const tempNoche = clima.hourly?.temperature_2m?.[nH] !== undefined 
-    ? Math.round(clima.hourly.temperature_2m[nH]) 
-    : Math.round((tempMin + tempActual) / 2);
+  const tempMin = Math.round(clima.daily?.temperature_2m_min?.[d] ?? clima.daily?.temperature_2m_min?.[0] ?? 15);
+  const tempMax = Math.round(clima.daily?.temperature_2m_max?.[d] ?? clima.daily?.temperature_2m_max?.[0] ?? 22);
 
-  const lluviaManana = clima.hourly?.precipitation_probability?.[mH] ?? lluviaProb;
-  const lluviaTarde = clima.hourly?.precipitation_probability?.[aH] ?? lluviaProb;
-  const lluviaNoche = clima.hourly?.precipitation_probability?.[nH] ?? 0;
+  const horaTemp = (h, fallback) => {
+    const v = clima.hourly?.temperature_2m?.[off + h];
+    return v !== undefined && v !== null ? Math.round(v) : fallback;
+  };
+
+  // Temperatura "de referencia" del aviso: hoy es la actual; otros días, la de la hora de la mañana
+  const tempActual = d === 0
+    ? Math.round(clima.current?.temperature_2m ?? clima.current_weather?.temperature ?? 20)
+    : horaTemp(mH, Math.round((tempMin + tempMax) / 2));
+
+  const tempManana = horaTemp(mH, tempActual);
+  const tempTarde = horaTemp(aH, tempMax);
+  const tempNoche = horaTemp(nH, Math.round((tempMin + tempActual) / 2));
+
+  const vientoMax = Math.round(clima.daily?.wind_speed_10m_max?.[d] ?? clima.current?.wind_speed_10m ?? 10);
+  const lluviaDiaria = clima.daily?.precipitation_probability_max?.[d] ?? 0;
+  const weatherCode = d === 0
+    ? (clima.current?.weather_code ?? clima.current_weather?.weathercode ?? clima.daily?.weather_code?.[0] ?? 0)
+    : (clima.daily?.weather_code?.[d] ?? 0);
+
+  // Riesgo de tormenta de ese día (para hoy, desde ahora; para otros días, las 24 h completas)
+  let riesgo;
+  if (d === 0) {
+    riesgo = evaluarRiesgoTormenta(clima, 18);
+  } else {
+    const inicioDia = new Date(`${clima.daily.time[d]}T00:00:00`).getTime();
+    riesgo = evaluarRiesgoTormenta(clima, 24, isNaN(inicioDia) ? Date.now() + d * 86400000 : inicioDia);
+  }
+  if (d > 0 && [95, 96, 99].includes(weatherCode) && riesgo.nivel < 1) {
+    riesgo = { ...riesgo, nivel: 1, probEfectiva: Math.max(riesgo.probEfectiva, 55) };
+  }
+
+  const lluviaProb = Math.max(lluviaDiaria, riesgo.probEfectiva);
+  const lluviaManana = Math.max(clima.hourly?.precipitation_probability?.[off + mH] ?? lluviaDiaria, riesgo.nivel >= 1 ? riesgo.probEfectiva : 0);
+  const lluviaTarde = Math.max(clima.hourly?.precipitation_probability?.[off + aH] ?? lluviaDiaria, riesgo.nivel >= 1 ? riesgo.probEfectiva : 0);
+  const lluviaNoche = Math.max(clima.hourly?.precipitation_probability?.[off + nH] ?? 0, riesgo.nivel >= 1 ? riesgo.probEfectiva : 0);
 
   let condicion = "sol";
   let icono = "☀️";
@@ -1733,11 +1907,13 @@ function obtenerMetricasClimaNotificacion() {
   let iconFile = "icons/weather-sun.png";
 
   // Tormenta eléctrica / granizo / lluvia / precipitaciones
-  if ([95, 96, 99].includes(weatherCode)) {
+  if (riesgo.nivel >= 1 || [95, 96, 99].includes(weatherCode)) {
     condicion = "tormenta";
     icono = "⛈️";
     color = "#ef4444";
-    tag = weatherCode >= 96 ? "Tormenta con Granizo" : "Tormenta Eléctrica";
+    tag = riesgo.nivel >= 2 || [95, 96, 99].includes(weatherCode)
+      ? (riesgo.granizo || weatherCode >= 96 ? "Tormenta con Granizo" : "Tormenta Eléctrica")
+      : "Riesgo de Tormenta";
     iconFile = "icons/weather-rain.png";
   } else if (lluviaProb >= 40 || (weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 90)) {
     condicion = "lluvia";
@@ -1781,96 +1957,175 @@ function obtenerMetricasClimaNotificacion() {
     tempNoche,
     lluviaManana,
     lluviaTarde,
-    lluviaNoche
+    lluviaNoche,
+    tormenta: riesgo.nivel,
+    tormentaTexto: riesgo.nivel >= 1 ? textoRiesgoTormenta(riesgo) : "",
+    tormentaHora: riesgo.horaPico || null
   };
 }
 
-// Programar los 3 avisos diarios (Mañana, Tarde, Noche) en Capacitor con temperaturas completas y repetición diaria
-async function programarAvisosBriefing(schedule) {
+// ---------------------------------------------------------------------------
+// Avisos programados: se calculan DÍA A DÍA con la previsión real de cada fecha.
+// Antes se programaba un aviso con repetición diaria y el texto fijo (la temperatura
+// del momento en que se abrió la app), por eso la temperatura nunca cambiaba.
+// Ahora se programan los próximos 8 días con sus propios datos y se reprograman cada
+// vez que se actualiza la previsión (al abrir la app o volver a ella).
+// ---------------------------------------------------------------------------
+const NOTIF_DIAS_VISTA = 8;
+const NOTIF_ID_BASE = 1000; // 1000 + dia*10 + {0: alarma matutina, 1: mañana, 2: tarde, 3: noche}
+
+async function asegurarCanalTormentas(LocalNotifications) {
+  try {
+    await LocalNotifications.createChannel({
+      id: "skybrief_tormentas",
+      name: "Alertas de tormenta",
+      description: "Avisos urgentes de tormentas y fenómenos severos",
+      importance: 5,
+      visibility: 1,
+      vibration: true,
+      lights: true,
+      lightColor: "#FF0000"
+    });
+  } catch (e) {}
+}
+
+function fechaConHora(base, dayOffset, hora, minuto) {
+  const f = new Date(base.getFullYear(), base.getMonth(), base.getDate() + dayOffset, hora, minuto || 0, 0, 0);
+  return f;
+}
+
+async function programarNotificacionesSemana(schedule) {
   const LocalNotifications = window.Capacitor?.Plugins?.LocalNotifications;
   if (!LocalNotifications) return;
-
-  const m = obtenerMetricasClimaNotificacion();
+  if (!datosMeteorologicos || !datosMeteorologicos.clima) return;
 
   try {
     const permiso = await LocalNotifications.requestPermissions();
     if (permiso.display !== "granted") return;
 
-    // Cancelar avisos de briefing anteriores
+    await asegurarCanalTormentas(LocalNotifications);
+
+    // Cancelar avisos anteriores (los repetitivos antiguos y los de la semana previa)
+    const idsViejos = [100, 101, 102, 103, 901];
+    for (let d = 0; d < NOTIF_DIAS_VISTA; d++) {
+      for (let s = 0; s < 4; s++) idsViejos.push(NOTIF_ID_BASE + d * 10 + s);
+    }
     try {
-      await LocalNotifications.cancel({ notifications: [{ id: 101 }, { id: 102 }, { id: 103 }] });
+      await LocalNotifications.cancel({ notifications: idsViejos.map(id => ({ id })) });
     } catch (e) {}
 
-    // Programar los 3 avisos con repetición diaria estricta
-    await LocalNotifications.schedule({
-      notifications: [
-        {
-          id: 101,
-          title: `🌅 Kumo • Mañana: ${m.tempManana}°C (Mín ${m.tempMin}° / Máx ${m.tempMax}°)`,
-          body: `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaManana}%. Consulta tu vestimenta y reporte de salida.`,
-          schedule: { 
-            on: {
-              hour: schedule.morning,
-              minute: schedule.morningMinute
-            },
-            every: "day",
-            repeats: true,
-            allowWhileIdle: true
-          },
-          sound: "beep.wav",
-          iconColor: "#38bdf8",
-          smallIcon: "ic_stat_name",
-          largeIcon: "kumo_avatar"
-        },
-        {
-          id: 102,
-          title: `☀️ Kumo • Tarde: ${m.tempTarde}°C (Máx ${m.tempMax}°C)`,
-          body: `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaTarde}%. Actualización de temperatura y estado vial.`,
-          schedule: { 
-            on: {
-              hour: schedule.afternoon,
-              minute: schedule.afternoonMinute
-            },
-            every: "day",
-            repeats: true,
-            allowWhileIdle: true
-          },
-          sound: "beep.wav",
-          iconColor: "#f59e0b",
-          smallIcon: "ic_stat_name",
-          largeIcon: "kumo_avatar"
-        },
-        {
-          id: 103,
-          title: `🌙 Kumo • Noche: ${m.tempNoche}°C (Mín ${m.tempMin}°C)`,
-          body: `🌙 Noche a ${m.tempNoche}°C • Viento ${m.vientoMax} km/h. Resumen del día y previsión térmica para mañana.`,
-          schedule: { 
-            on: {
-              hour: schedule.night,
-              minute: schedule.nightMinute
-            },
-            every: "day",
-            repeats: true,
-            allowWhileIdle: true
-          },
-          sound: "beep.wav",
-          iconColor: "#818cf8",
-          smallIcon: "ic_stat_name",
-          largeIcon: "kumo_avatar"
+    const ahora = new Date();
+    const margen = ahora.getTime() + 10000;
+    const notifs = [];
+    const horaMatutina = localStorage.getItem("notify_time");
+    const totalDias = Math.min(NOTIF_DIAS_VISTA, datosMeteorologicos.clima.daily?.time?.length || 1);
+
+    const base = (m, sufijoTitulo, cuerpo, at, id, colorFallback) => {
+      const esRoja = m.tormenta >= 2;
+      const hayTormenta = m.tormenta >= 1;
+      const n = {
+        id,
+        title: `${hayTormenta ? (esRoja ? "🔴 " : "🟠 ") : ""}${sufijoTitulo}`,
+        body: hayTormenta ? `${m.tormentaTexto} ${cuerpo}` : cuerpo,
+        schedule: { at, allowWhileIdle: true },
+        sound: "beep.wav",
+        iconColor: hayTormenta ? "#ef4444" : colorFallback,
+        smallIcon: "ic_stat_name",
+        largeIcon: "kumo_avatar"
+      };
+      if (hayTormenta) n.channelId = "skybrief_tormentas";
+      return n;
+    };
+
+    for (let d = 0; d < totalDias; d++) {
+      const m = obtenerMetricasClimaNotificacion(d);
+      const idBase = NOTIF_ID_BASE + d * 10;
+
+      // Aviso matutino personalizado (si el usuario lo configuró)
+      if (horaMatutina) {
+        const [hh, mm] = horaMatutina.split(":").map(Number);
+        const at = fechaConHora(ahora, d, hh, mm);
+        if (at.getTime() > margen) {
+          notifs.push(base(
+            m,
+            `${m.icono} Kumo • ${m.tempManana}°C (Mín ${m.tempMin}° / Máx ${m.tempMax}°)`,
+            `${m.tag} • Lluvia: ${m.lluviaProb}% | Consulta tu recomendación de vestimenta y movilidad para hoy.`,
+            at, idBase, m.color
+          ));
         }
-      ]
-    });
+      }
+
+      // Mañana
+      let at = fechaConHora(ahora, d, schedule.morning, schedule.morningMinute);
+      if (at.getTime() > margen) {
+        notifs.push(base(
+          m,
+          `🌅 Kumo • Mañana: ${m.tempManana}°C (Mín ${m.tempMin}° / Máx ${m.tempMax}°)`,
+          `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaManana}%. Consulta tu vestimenta y reporte de salida.`,
+          at, idBase + 1, "#38bdf8"
+        ));
+      }
+
+      // Tarde
+      at = fechaConHora(ahora, d, schedule.afternoon, schedule.afternoonMinute);
+      if (at.getTime() > margen) {
+        notifs.push(base(
+          m,
+          `☀️ Kumo • Tarde: ${m.tempTarde}°C (Máx ${m.tempMax}°C)`,
+          `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaTarde}%. Actualización de temperatura y estado vial.`,
+          at, idBase + 2, "#f59e0b"
+        ));
+      }
+
+      // Noche
+      at = fechaConHora(ahora, d, schedule.night, schedule.nightMinute);
+      if (at.getTime() > margen) {
+        const manana = d + 1 < totalDias ? obtenerMetricasClimaNotificacion(d + 1) : null;
+        notifs.push(base(
+          m,
+          `🌙 Kumo • Noche: ${m.tempNoche}°C (Mín ${m.tempMin}°C)`,
+          `🌙 Noche a ${m.tempNoche}°C • Viento ${m.vientoMax} km/h.${manana ? ` Mañana: ${manana.icono} ${manana.tempMin}° / ${manana.tempMax}°, lluvia ${manana.lluviaProb}%.` : " Resumen del día."}`,
+          at, idBase + 3, "#818cf8"
+        ));
+      }
+    }
+
+    // Aviso anticipado de tormenta: 1 hora antes del momento previsto (solo hoy)
+    const hoy = obtenerMetricasClimaNotificacion(0);
+    if (hoy.tormenta >= 1 && hoy.tormentaHora) {
+      const aviso = new Date(hoy.tormentaHora.getTime() - 60 * 60000);
+      if (aviso.getTime() > margen) {
+        notifs.push({
+          id: 901,
+          title: hoy.tormenta >= 2 ? "🔴⛈️ ALERTA ROJA: TORMENTA EN CAMINO" : "🟠⚡ RIESGO DE TORMENTA EN CAMINO",
+          body: hoy.tormentaTexto,
+          channelId: "skybrief_tormentas",
+          schedule: { at: aviso, allowWhileIdle: true },
+          iconColor: "#ef4444",
+          smallIcon: "ic_stat_name",
+          largeIcon: "kumo_avatar",
+          sound: "beep.wav"
+        });
+      }
+    }
+
+    if (notifs.length > 0) {
+      await LocalNotifications.schedule({ notifications: notifs });
+    }
   } catch (e) {
     console.warn("No se pudieron programar los avisos en Capacitor:", e);
   }
 }
 
-// Alarma matutina personalizada con temperaturas completas y repetición diaria
+// Avisos de mañana / tarde / noche (compatibilidad con las llamadas existentes)
+async function programarAvisosBriefing(schedule) {
+  await programarNotificacionesSemana(schedule || getUserSchedule());
+}
+
+// Alarma matutina personalizada: guarda la hora y reprograma los próximos días con su previsión
 async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
   const LocalNotifications = window.Capacitor?.Plugins?.LocalNotifications;
-  const m = obtenerMetricasClimaNotificacion();
-  const tituloNotificacion = `${m.icono} Kumo • ${m.tempActual}°C (Mín ${m.tempMin}° / Máx ${m.tempMax}°)`;
-  const [horas, minutos] = horaString.split(":").map(Number);
+  const m = obtenerMetricasClimaNotificacion(0);
 
   if (LocalNotifications) {
     const permiso = await LocalNotifications.requestPermissions();
@@ -1879,43 +2134,16 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
       return;
     }
 
-    try {
-      await LocalNotifications.cancel({ notifications: [{ id: 100 }] });
-    } catch (e) {}
-
-    const cuerpoNotificacion = `${m.tag} • Lluvia: ${m.lluviaProb}% | ${textoConsejo || "Consulta tu recomendación de vestimenta y movilidad para hoy."}`;
-
-    await LocalNotifications.schedule({
-      notifications: [
-        {
-          id: 100,
-          title: tituloNotificacion,
-          body: cuerpoNotificacion,
-          schedule: { 
-            on: {
-              hour: horas,
-              minute: minutos
-            },
-            every: "day",
-            repeats: true,
-            allowWhileIdle: true
-          },
-          sound: "beep.wav",
-          iconColor: m.color,
-          smallIcon: "ic_stat_name",
-          largeIcon: "kumo_avatar"
-        }
-      ]
-    });
-
     localStorage.setItem("notify_time", horaString);
+    await programarNotificacionesSemana(getUserSchedule());
+
     if (notifBadge) {
       notifBadge.textContent = "Activo";
       notifBadge.style.background = "#065f46";
       notifBadge.style.color = "#6ee7b7";
     }
-    if (notifyStatus) notifyStatus.textContent = `${m.icono} Aviso diario programado a las ${horaString} (${m.tempActual}°C)`;
-    alert(`Aviso (${m.tempActual}°C, ${m.tag}) programado con éxito todos los días a las ${horaString}.`);
+    if (notifyStatus) notifyStatus.textContent = `${m.icono} Aviso diario programado a las ${horaString} (con la previsión de cada día)`;
+    alert(`Aviso programado con éxito todos los días a las ${horaString}. La temperatura se actualiza con la previsión de cada día.`);
     return;
   }
 
@@ -1939,6 +2167,14 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
     alert("Tu navegador no soporta notificaciones locales.");
   }
 }
+
+// Al volver a la app tras un rato, refrescar la previsión y reprogramar los avisos
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && window.__ultimaCargaClima && Date.now() - window.__ultimaCargaClima > 30 * 60 * 1000) {
+    iniciarApp();
+  }
+});
+
 
 // Guardia anti-duplicados por día en navegador Web / PWA con ventana tolerante a throttling
 function verificarDisparoWebNotif(timeStr, keySuffix, titleFn, bodyFn) {
