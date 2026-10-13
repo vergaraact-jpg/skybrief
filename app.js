@@ -2464,17 +2464,42 @@ function obtenerMetricasClimaNotificacion(dayIndex = 0) {
 const NOTIF_DIAS_VISTA = 8;
 const NOTIF_ID_BASE = 1000; // 1000 + dia*10 + {0: alarma matutina, 1: mañana, 2: tarde, 3: noche}
 
-async function asegurarCanalTormentas(LocalNotifications) {
+async function asegurarCanalesNotificaciones(LocalNotifications) {
   try {
+    // 1. Canal de Tormentas y emergencias meteorológicas (Prioridad Máxima + Alerta Roja)
     await LocalNotifications.createChannel({
       id: "skybrief_tormentas",
-      name: "Alertas de tormenta",
-      description: "Avisos urgentes de tormentas y fenómenos severos",
+      name: "Alertas de Tormenta Severa",
+      description: "Avisos urgentes de tormentas, rayos y fenómenos severos",
       importance: 5,
       visibility: 1,
       vibration: true,
       lights: true,
       lightColor: "#FF0000"
+    });
+
+    // 2. Canal de Aviso Matutino y Alarma puntual (Estilo Alarma / Duolingo)
+    await LocalNotifications.createChannel({
+      id: "skybrief_matutino",
+      name: "Aviso Matutino Diario",
+      description: "Despertador meteorológico y consejos matutinos de Kumo",
+      importance: 5,
+      visibility: 1,
+      vibration: true,
+      lights: true,
+      lightColor: "#38BDF8"
+    });
+
+    // 3. Canal de Briefings de la jornada
+    await LocalNotifications.createChannel({
+      id: "skybrief_briefing",
+      name: "Briefings del Día (Mañana/Tarde/Noche)",
+      description: "Actualizaciones de estado vial, temperatura y viento",
+      importance: 4,
+      visibility: 1,
+      vibration: true,
+      lights: true,
+      lightColor: "#F59E0B"
     });
   } catch (e) {}
 }
@@ -2493,7 +2518,7 @@ async function programarNotificacionesSemana(schedule) {
     const permiso = await LocalNotifications.requestPermissions();
     if (permiso.display !== "granted") return;
 
-    await asegurarCanalTormentas(LocalNotifications);
+    await asegurarCanalesNotificaciones(LocalNotifications);
 
     // Cancelar absolutamente todos los avisos anteriores para evitar solapamientos o duplicados
     const idsViejos = [100, 101, 102, 103, 901];
@@ -2512,21 +2537,20 @@ async function programarNotificacionesSemana(schedule) {
     const briefingActivo = isBriefingNotifsEnabled();
     const totalDias = Math.min(NOTIF_DIAS_VISTA, datosMeteorologicos.clima.daily?.time?.length || 1);
 
-    const base = (m, sufijoTitulo, cuerpo, at, id, colorFallback) => {
+    const base = (m, sufijoTitulo, cuerpo, at, id, colorFallback, defaultChannel = "skybrief_matutino") => {
       const esRoja = m.tormenta >= 2;
       const hayTormenta = m.tormenta >= 1;
-      const n = {
+      return {
         id,
         title: `${hayTormenta ? (esRoja ? "🔴 " : "🟠 ") : ""}${sufijoTitulo}`,
         body: hayTormenta ? `${m.tormentaTexto} ${cuerpo}` : cuerpo,
         schedule: { at, allowWhileIdle: true },
         sound: "beep.wav",
+        channelId: hayTormenta ? "skybrief_tormentas" : defaultChannel,
         iconColor: hayTormenta ? "#ef4444" : colorFallback,
         smallIcon: "ic_stat_name",
         largeIcon: "kumo_avatar"
       };
-      if (hayTormenta) n.channelId = "skybrief_tormentas";
-      return n;
     };
 
     for (let d = 0; d < totalDias; d++) {
@@ -2543,7 +2567,7 @@ async function programarNotificacionesSemana(schedule) {
             m,
             `${m.icono} Kumo • ${m.tempManana}°C (Mín ${m.tempMin}° / Máx ${m.tempMax}°)`,
             `${m.tag} • Lluvia: ${m.lluviaProb}% | Consulta tu recomendación de vestimenta y movilidad para hoy.`,
-            at, idBase, m.color
+            at, idBase, m.color, "skybrief_matutino"
           ));
         }
       }
@@ -2557,7 +2581,7 @@ async function programarNotificacionesSemana(schedule) {
             m,
             `🌅 Kumo • Mañana: ${m.tempManana}°C (Mín ${m.tempMin}° / Máx ${m.tempMax}°)`,
             `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaManana}%. Consulta tu vestimenta y reporte de salida.`,
-            at, idBase + 1, "#38bdf8"
+            at, idBase + 1, "#38bdf8", "skybrief_briefing"
           ));
         }
 
@@ -2568,7 +2592,7 @@ async function programarNotificacionesSemana(schedule) {
             m,
             `☀️ Kumo • Tarde: ${m.tempTarde}°C (Máx ${m.tempMax}°C)`,
             `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaTarde}%. Actualización de temperatura y estado vial.`,
-            at, idBase + 2, "#f59e0b"
+            at, idBase + 2, "#f59e0b", "skybrief_briefing"
           ));
         }
 
@@ -2580,7 +2604,7 @@ async function programarNotificacionesSemana(schedule) {
             m,
             `🌙 Kumo • Noche: ${m.tempNoche}°C (Mín ${m.tempMin}°C)`,
             `🌙 Noche a ${m.tempNoche}°C • Viento ${m.vientoMax} km/h.${manana ? ` Mañana: ${manana.icono} ${manana.tempMin}° / ${manana.tempMax}°, lluvia ${manana.lluviaProb}%.` : " Resumen del día."}`,
-            at, idBase + 3, "#818cf8"
+            at, idBase + 3, "#818cf8", "skybrief_briefing"
           ));
         }
       }
@@ -2803,4 +2827,26 @@ if (btnSetAlert) {
     toggleAlarmaMatutina();
   });
 }
+
+// Botón para dirigir al usuario directamente a los ajustes de batería / alarmas del sistema
+const btnOpenBatterySettings = document.getElementById("btn-open-battery-settings");
+if (btnOpenBatterySettings) {
+  btnOpenBatterySettings.addEventListener("click", async () => {
+    const NativeSettings = window.Capacitor?.Plugins?.NativeSettings;
+    if (NativeSettings) {
+      try {
+        await NativeSettings.openBatterySettings();
+      } catch (e) {
+        try {
+          await NativeSettings.openNotificationSettings();
+        } catch (ex) {
+          alert("Abre Ajustes en tu móvil > Aplicaciones > SkyBrief > Batería > Sin restricciones.");
+        }
+      }
+    } else {
+      alert("💡 Para asegurar que Kumo suene siempre sin abrir la app:\n\n1. Ve a Ajustes de tu móvil > Aplicaciones > SkyBrief.\n2. En 'Batería', selecciona 'Sin restricciones' o 'No optimizar'.\n3. En 'Alarmas y recordatorios', asegúrate de que esté permitido.");
+    }
+  });
+}
+
 

@@ -1,5 +1,12 @@
 {
   "appId": "com.skybrief.app",
   "appName": "SkyBrief",
-  "webDir": "www"
+  "webDir": "www",
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_name",
+      "iconColor": "#38bdf8",
+      "sound": "beep.wav"
+    }
+  }
 }
