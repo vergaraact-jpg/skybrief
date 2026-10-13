@@ -280,16 +280,48 @@ const timeAfternoonInput = document.getElementById("time-afternoon");
 const timeNightInput = document.getElementById("time-night");
 const btnSaveSchedule = document.getElementById("btn-save-schedule");
 const scheduleStatus = document.getElementById("schedule-status");
+const toggleBriefingNotifs = document.getElementById("toggle-briefing-notifs");
+const briefingNotifBadge = document.getElementById("briefing-notif-badge");
+
+function isBriefingNotifsEnabled() {
+  return localStorage.getItem("skybrief_briefing_notifs_enabled") === "true";
+}
+
+function actualizarBadgeBriefing() {
+  const activo = isBriefingNotifsEnabled();
+  if (toggleBriefingNotifs) toggleBriefingNotifs.checked = activo;
+  if (briefingNotifBadge) {
+    if (activo) {
+      briefingNotifBadge.textContent = "3 avisos activos";
+      briefingNotifBadge.style.background = "#065f46";
+      briefingNotifBadge.style.color = "#6ee7b7";
+    } else {
+      briefingNotifBadge.textContent = "Solo referencia";
+      briefingNotifBadge.style.background = "#334155";
+      briefingNotifBadge.style.color = "#94a3b8";
+    }
+  }
+}
 
 function restaurarInputsHorarios() {
   const schedule = getUserSchedule();
   if (timeMorningInput) timeMorningInput.value = schedule.morningTime;
   if (timeAfternoonInput) timeAfternoonInput.value = schedule.afternoonTime;
   if (timeNightInput) timeNightInput.value = schedule.nightTime;
+  actualizarBadgeBriefing();
 }
 
 // Restaurar inmediatamente al cargar el script
 restaurarInputsHorarios();
+
+if (toggleBriefingNotifs) {
+  toggleBriefingNotifs.addEventListener("change", async (e) => {
+    const checked = e.target.checked;
+    localStorage.setItem("skybrief_briefing_notifs_enabled", checked ? "true" : "false");
+    actualizarBadgeBriefing();
+    await programarNotificacionesSemana(getUserSchedule());
+  });
+}
 
 if (btnSaveSchedule) {
   btnSaveSchedule.addEventListener("click", async () => {
@@ -2463,7 +2495,7 @@ async function programarNotificacionesSemana(schedule) {
 
     await asegurarCanalTormentas(LocalNotifications);
 
-    // Cancelar avisos anteriores (los repetitivos antiguos y los de la semana previa)
+    // Cancelar absolutamente todos los avisos anteriores para evitar solapamientos o duplicados
     const idsViejos = [100, 101, 102, 103, 901];
     for (let d = 0; d < NOTIF_DIAS_VISTA; d++) {
       for (let s = 0; s < 4; s++) idsViejos.push(NOTIF_ID_BASE + d * 10 + s);
@@ -2473,9 +2505,11 @@ async function programarNotificacionesSemana(schedule) {
     } catch (e) {}
 
     const ahora = new Date();
-    const margen = ahora.getTime() + 10000;
+    // Margen estricto: al menos 30 segundos en el futuro para que NUNCA se dispare de golpe al guardar
+    const margen = ahora.getTime() + 30000;
     const notifs = [];
     const horaMatutina = localStorage.getItem("notify_time");
+    const briefingActivo = isBriefingNotifsEnabled();
     const totalDias = Math.min(NOTIF_DIAS_VISTA, datosMeteorologicos.clima.daily?.time?.length || 1);
 
     const base = (m, sufijoTitulo, cuerpo, at, id, colorFallback) => {
@@ -2499,10 +2533,11 @@ async function programarNotificacionesSemana(schedule) {
       const m = obtenerMetricasClimaNotificacion(d);
       const idBase = NOTIF_ID_BASE + d * 10;
 
-      // Aviso matutino personalizado (si el usuario lo configuró)
+      // 1. Aviso matutino diario (solo si el usuario lo activó voluntariamente)
       if (horaMatutina) {
         const [hh, mm] = horaMatutina.split(":").map(Number);
         const at = fechaConHora(ahora, d, hh, mm);
+        // Si la hora de hoy ya pasó, no se programa para hoy (evita dispararse inmediatamente); empezará mañana
         if (at.getTime() > margen) {
           notifs.push(base(
             m,
@@ -2513,42 +2548,45 @@ async function programarNotificacionesSemana(schedule) {
         }
       }
 
-      // Mañana
-      let at = fechaConHora(ahora, d, schedule.morning, schedule.morningMinute);
-      if (at.getTime() > margen) {
-        notifs.push(base(
-          m,
-          `🌅 Kumo • Mañana: ${m.tempManana}°C (Mín ${m.tempMin}° / Máx ${m.tempMax}°)`,
-          `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaManana}%. Consulta tu vestimenta y reporte de salida.`,
-          at, idBase + 1, "#38bdf8"
-        ));
-      }
+      // 2. Avisos de tramos del día (Mañana, Tarde, Noche): solo si el usuario los ha activado expresamente con el toggle
+      if (briefingActivo && schedule) {
+        // Mañana
+        let at = fechaConHora(ahora, d, schedule.morning, schedule.morningMinute);
+        if (at.getTime() > margen) {
+          notifs.push(base(
+            m,
+            `🌅 Kumo • Mañana: ${m.tempManana}°C (Mín ${m.tempMin}° / Máx ${m.tempMax}°)`,
+            `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaManana}%. Consulta tu vestimenta y reporte de salida.`,
+            at, idBase + 1, "#38bdf8"
+          ));
+        }
 
-      // Tarde
-      at = fechaConHora(ahora, d, schedule.afternoon, schedule.afternoonMinute);
-      if (at.getTime() > margen) {
-        notifs.push(base(
-          m,
-          `☀️ Kumo • Tarde: ${m.tempTarde}°C (Máx ${m.tempMax}°C)`,
-          `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaTarde}%. Actualización de temperatura y estado vial.`,
-          at, idBase + 2, "#f59e0b"
-        ));
-      }
+        // Tarde
+        at = fechaConHora(ahora, d, schedule.afternoon, schedule.afternoonMinute);
+        if (at.getTime() > margen) {
+          notifs.push(base(
+            m,
+            `☀️ Kumo • Tarde: ${m.tempTarde}°C (Máx ${m.tempMax}°C)`,
+            `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaTarde}%. Actualización de temperatura y estado vial.`,
+            at, idBase + 2, "#f59e0b"
+          ));
+        }
 
-      // Noche
-      at = fechaConHora(ahora, d, schedule.night, schedule.nightMinute);
-      if (at.getTime() > margen) {
-        const manana = d + 1 < totalDias ? obtenerMetricasClimaNotificacion(d + 1) : null;
-        notifs.push(base(
-          m,
-          `🌙 Kumo • Noche: ${m.tempNoche}°C (Mín ${m.tempMin}°C)`,
-          `🌙 Noche a ${m.tempNoche}°C • Viento ${m.vientoMax} km/h.${manana ? ` Mañana: ${manana.icono} ${manana.tempMin}° / ${manana.tempMax}°, lluvia ${manana.lluviaProb}%.` : " Resumen del día."}`,
-          at, idBase + 3, "#818cf8"
-        ));
+        // Noche
+        at = fechaConHora(ahora, d, schedule.night, schedule.nightMinute);
+        if (at.getTime() > margen) {
+          const manana = d + 1 < totalDias ? obtenerMetricasClimaNotificacion(d + 1) : null;
+          notifs.push(base(
+            m,
+            `🌙 Kumo • Noche: ${m.tempNoche}°C (Mín ${m.tempMin}°C)`,
+            `🌙 Noche a ${m.tempNoche}°C • Viento ${m.vientoMax} km/h.${manana ? ` Mañana: ${manana.icono} ${manana.tempMin}° / ${manana.tempMax}°, lluvia ${manana.lluviaProb}%.` : " Resumen del día."}`,
+            at, idBase + 3, "#818cf8"
+          ));
+        }
       }
     }
 
-    // Aviso anticipado de tormenta: 1 hora antes del momento previsto (solo hoy)
+    // Aviso anticipado de tormenta: 1 hora antes del momento previsto (solo hoy y solo si está en el futuro)
     const hoy = obtenerMetricasClimaNotificacion(0);
     if (hoy.tormenta >= 1 && hoy.tormentaHora) {
       const aviso = new Date(hoy.tormentaHora.getTime() - 60 * 60000);
@@ -2580,29 +2618,89 @@ async function programarAvisosBriefing(schedule) {
   await programarNotificacionesSemana(schedule || getUserSchedule());
 }
 
-// Alarma matutina personalizada: guarda la hora y reprograma los próximos días con su previsión
-async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
-  const LocalNotifications = window.Capacitor?.Plugins?.LocalNotifications;
-  const m = obtenerMetricasClimaNotificacion(0);
-
-  if (LocalNotifications) {
-    const permiso = await LocalNotifications.requestPermissions();
-    if (permiso.display !== "granted") {
-      alert("Necesitamos permisos de notificación para el aviso matutino.");
-      return;
-    }
-
-    localStorage.setItem("notify_time", horaString);
-    await programarNotificacionesSemana(getUserSchedule());
-
+function actualizarUIAvisoMatutino() {
+  const horaGuardada = localStorage.getItem("notify_time");
+  if (horaGuardada) {
+    if (notifyTimeInput) notifyTimeInput.value = horaGuardada;
     if (notifBadge) {
       notifBadge.textContent = "Activo";
       notifBadge.style.background = "#065f46";
       notifBadge.style.color = "#6ee7b7";
     }
-    if (notifyStatus) notifyStatus.textContent = `${m.icono} Aviso diario programado a las ${horaString} (con la previsión de cada día)`;
-    alert(`Aviso programado con éxito todos los días a las ${horaString}. La temperatura se actualiza con la previsión de cada día.`);
+    if (btnSetAlert) {
+      btnSetAlert.textContent = "Desactivar aviso";
+      btnSetAlert.classList.add("btn-danger-outline");
+      btnSetAlert.classList.remove("btn-secondary");
+    }
+    if (notifyStatus) {
+      notifyStatus.textContent = `✓ Aviso diario activo a las ${horaGuardada} con previsión actualizada.`;
+      notifyStatus.style.color = "#38bdf8";
+    }
+  } else {
+    if (notifBadge) {
+      notifBadge.textContent = "Inactivo";
+      notifBadge.style.background = "#334155";
+      notifBadge.style.color = "#94a3b8";
+    }
+    if (btnSetAlert) {
+      btnSetAlert.textContent = "Activar aviso";
+      btnSetAlert.classList.remove("btn-danger-outline");
+      btnSetAlert.classList.add("btn-secondary");
+    }
+    if (notifyStatus) {
+      notifyStatus.textContent = "No hay ningún aviso matutino programado.";
+      notifyStatus.style.color = "#94a3b8";
+    }
+  }
+}
+
+// Inicializar el estado de la UI al cargar
+actualizarUIAvisoMatutino();
+
+// Alarma matutina personalizada: activa o desactiva limpiamente el aviso
+async function toggleAlarmaMatutina() {
+  const LocalNotifications = window.Capacitor?.Plugins?.LocalNotifications;
+  const horaGuardada = localStorage.getItem("notify_time");
+
+  // Si ya estaba activo, el usuario quiere DESACTIVARLO
+  if (horaGuardada) {
+    localStorage.removeItem("notify_time");
+    if (LocalNotifications) {
+      try {
+        const idsCancelar = [100];
+        for (let d = 0; d < NOTIF_DIAS_VISTA; d++) {
+          idsCancelar.push(NOTIF_ID_BASE + d * 10);
+        }
+        await LocalNotifications.cancel({ notifications: idsCancelar.map(id => ({ id })) });
+      } catch (e) {}
+    }
+    actualizarUIAvisoMatutino();
+    alert("✓ Aviso matutino desactivado correctamente.");
     return;
+  }
+
+  // Si no estaba activo, el usuario quiere ACTIVARLO
+  const horaString = notifyTimeInput ? notifyTimeInput.value : "07:30";
+  const m = obtenerMetricasClimaNotificacion(0);
+
+  if (LocalNotifications) {
+    try {
+      const permiso = await LocalNotifications.requestPermissions();
+      if (permiso.display !== "granted") {
+        alert("Necesitamos permisos de notificación para poder avisarte a las " + horaString);
+        return;
+      }
+
+      localStorage.setItem("notify_time", horaString);
+      await programarNotificacionesSemana(getUserSchedule());
+      actualizarUIAvisoMatutino();
+      alert(`✓ Aviso programado a las ${horaString}.\n• La temperatura se actualizará automáticamente con la previsión de cada día.\n• Si esa hora ya pasó hoy, tu primer aviso sonará mañana a las ${horaString}.`);
+      return;
+    } catch (e) {
+      console.warn("Error al programar en Capacitor:", e);
+      alert("Hubo un detalle al programar la notificación: " + (e.message || e));
+      return;
+    }
   }
 
   // Fallback para navegador web estándar / PWA
@@ -2610,19 +2708,14 @@ async function programarAlarmaMatutina(horaString, textoConsejo, tempTexto) {
     const permiso = await Notification.requestPermission();
     if (permiso === "granted") {
       localStorage.setItem("notify_time", horaString);
-      if (notifBadge) {
-        notifBadge.textContent = "Activo";
-        notifBadge.style.background = "#065f46";
-        notifBadge.style.color = "#6ee7b7";
-      }
-      if (notifyStatus) notifyStatus.textContent = `${m.icono} Aviso diario activado para las ${horaString} (${m.tempActual}°C)`;
+      actualizarUIAvisoMatutino();
       iniciarLoopNotificacionWeb();
-      alert(`Aviso web programado a las ${horaString}.`);
+      alert(`✓ Aviso web programado a las ${horaString}.`);
     } else {
-      alert("Debes conceder permisos de notificación para recibir el aviso.");
+      alert("Debes conceder permisos de notificación en el navegador para recibir el aviso.");
     }
   } else {
-    alert("Tu navegador no soporta notificaciones locales.");
+    alert("Tu dispositivo o navegador no soporta notificaciones locales.");
   }
 }
 
@@ -2681,34 +2774,33 @@ function iniciarLoopNotificacionWeb() {
       );
     }
 
-    const schedule = getUserSchedule();
-    if (schedule) {
-      verificarDisparoWebNotif(schedule.morningTime, "morning",
-        (m) => `🌅 Kumo • Mañana: ${m.tempManana}°C (Mín ${m.tempMin}° / Máx ${m.tempMax}°)`,
-        (m) => `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaManana}%. Previsión y vestimenta.`
-      );
-      verificarDisparoWebNotif(schedule.afternoonTime, "afternoon",
-        (m) => `☀️ Kumo • Tarde: ${m.tempTarde}°C (Máx ${m.tempMax}°C)`,
-        (m) => `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaTarde}%. Tráfico y temperatura.`
-      );
-      verificarDisparoWebNotif(schedule.nightTime, "night",
-        (m) => `🌙 Kumo • Noche: ${m.tempNoche}°C (Mín ${m.tempMin}°C)`,
-        (m) => `🌙 Noche a ${m.tempNoche}°C • Viento ${m.vientoMax} km/h. Resumen del día.`
-      );
+    if (isBriefingNotifsEnabled()) {
+      const schedule = getUserSchedule();
+      if (schedule) {
+        verificarDisparoWebNotif(schedule.morningTime, "morning",
+          (m) => `🌅 Kumo • Mañana: ${m.tempManana}°C (Mín ${m.tempMin}° / Máx ${m.tempMax}°)`,
+          (m) => `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaManana}%. Previsión y vestimenta.`
+        );
+        verificarDisparoWebNotif(schedule.afternoonTime, "afternoon",
+          (m) => `☀️ Kumo • Tarde: ${m.tempTarde}°C (Máx ${m.tempMax}°C)`,
+          (m) => `${m.icono} ${m.tag} • Prob. lluvia ${m.lluviaTarde}%. Tráfico y temperatura.`
+        );
+        verificarDisparoWebNotif(schedule.nightTime, "night",
+          (m) => `🌙 Kumo • Noche: ${m.tempNoche}°C (Mín ${m.tempMin}°C)`,
+          (m) => `🌙 Noche a ${m.tempNoche}°C • Viento ${m.vientoMax} km/h. Resumen del día.`
+        );
+      }
     }
   }, 30000); // Comprueba cada 30 segundos
 }
 
-if (localStorage.getItem("notify_time") || localStorage.getItem("skybrief_user_schedule")) {
+if (localStorage.getItem("notify_time") || isBriefingNotifsEnabled()) {
   iniciarLoopNotificacionWeb();
 }
 
 if (btnSetAlert) {
   btnSetAlert.addEventListener("click", () => {
-    const hora = notifyTimeInput ? notifyTimeInput.value : "07:30";
-    const consejoTexto = document.getElementById("alert-text")?.textContent || "";
-    const tempTexto = document.getElementById("temp-display")?.textContent || "--°C";
-    programarAlarmaMatutina(hora, consejoTexto, tempTexto);
+    toggleAlarmaMatutina();
   });
 }
 
